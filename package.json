@@ -1,0 +1,51 @@
+{
+  "name": "architect",
+  "version": "0.1.0",
+  "description": "Draw your architecture. Make Claude follow it.",
+  "license": "Apache-2.0",
+  "author": "Abhiram Shaji",
+  "type": "module",
+  "main": "out/main/main.js",
+  "bin": {
+    "architect-mcp": "out/mcp/bridge.js"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build && vite build --config vite.mcp.config.ts",
+    "install:local": "npm run build && electron-builder --dir && node scripts/install-local.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "shot": "node scripts/shot.mjs"
+  },
+  "dependencies": {
+    "@dagrejs/dagre": "^1.1.4",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@xyflow/react": "^12.0.0",
+    "chokidar": "^4.0.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "playwright": "^1.63.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0"
+  },
+  "build": {
+    "appId": "dev.architect.app",
+    "productName": "Architect",
+    "files": ["out/**", "assets/**", "package.json"],
+    "directories": { "output": "dist" },
+    "mac": { "icon": "assets/icon.png", "category": "public.app-category.developer-tools" },
+    "win": { "icon": "assets/icon.png", "target": "nsis" },
+    "linux": { "icon": "assets/icon.png", "target": "AppImage" }
+  }
+}
