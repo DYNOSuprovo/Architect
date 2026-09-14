@@ -21,11 +21,13 @@ function installMock() {
       title: 'Project Alpha',
       summary: 'A small service split into API, database access and background workers.',
       components: [
+        { id: 'ui', purpose: 'Browser client', owns: ['src/ui/**'] },
         { id: 'api', purpose: 'HTTP API layer', owns: ['src/api/**'] },
         { id: 'db', purpose: 'Database access', owns: ['src/db/**'] },
         { id: 'worker', purpose: 'Background jobs', owns: ['src/worker/**'] }
       ],
       edges: [
+        { from: 'ui', to: 'api' },
         { from: 'api', to: 'db' },
         { from: 'worker', to: 'db' }
       ],
@@ -114,9 +116,6 @@ function installMock() {
     async projects() {
       return Object.entries(roots).map(([root, title]) => ({ root, title }))
     },
-    async add() {
-      return null
-    },
     async open(root) {
       const arch = architectures[root]
       if (!arch) throw new Error(`unknown project: ${root}`)
@@ -124,6 +123,9 @@ function installMock() {
     },
     async pending() {
       return pendingByRoot['/demo/project-alpha'] ?? []
+    },
+    async mcpBridgeInfo() {
+      return { path: '/Users/demo/.architect/bin/architect-mcp.mjs', exists: true }
     },
     async decide(id, approved, reason, component) {
       for (const root of Object.keys(pendingByRoot)) {

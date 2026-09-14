@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { Architecture, Pending } from '../shared/types'
-import Canvas, { hasCycle } from './Canvas'
+import type { Architecture, McpBridgeInfo, Pending } from '../shared/types'
+import Canvas from './Canvas'
+import ConnectMcpPanel from './ConnectMcpPanel'
+import { hasCycle } from './layout'
 
 type ProjectSummary = { root: string; title: string }
 
@@ -20,7 +22,8 @@ export default function App() {
   const [rejecting, setRejecting] = useState<string | null>(null)
   const [reason, setReason] = useState('')
   const [reassign, setReassign] = useState<Record<string, string>>({})
-  const [addError, setAddError] = useState<string | null>(null)
+  const [showConnectMcp, setShowConnectMcp] = useState(false)
+  const [bridge, setBridge] = useState<McpBridgeInfo | null>(null)
 
   const openProject = useCallback((root: string) => {
     window.architect.open(root).then((a) => {
@@ -71,16 +74,11 @@ export default function App() {
     [decide, reassign]
   )
 
-  const addProject = useCallback(async () => {
-    const result = await window.architect.add()
-    if (!result) return
-    if ('error' in result) {
-      setAddError(result.error)
-      return
-    }
-    setAddError(null)
-    openProject(result.root)
-  }, [openProject])
+  const openConnectMcp = useCallback(() => {
+    setShowConnectMcp(true)
+    setBridge(null)
+    window.architect.mcpBridgeInfo().then(setBridge)
+  }, [])
 
   return (
     <div className="app">
@@ -100,10 +98,9 @@ export default function App() {
             ))}
             {projects.length === 0 && <li className="empty">No projects yet</li>}
           </ul>
-          <button className="add-project" onClick={addProject}>
-            Add project
+          <button className="sidebar-action" onClick={openConnectMcp}>
+            Connect MCP
           </button>
-          {addError && <p className="add-error">{addError}</p>}
         </div>
 
         <div className="sidebar-section inbox">
@@ -177,6 +174,8 @@ export default function App() {
           <div className="empty-state">Select a project to open its architecture</div>
         )}
       </main>
+
+      {showConnectMcp && <ConnectMcpPanel bridge={bridge} onClose={() => setShowConnectMcp(false)} />}
     </div>
   )
 }

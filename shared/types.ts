@@ -51,14 +51,16 @@ export type Request =
 
 export type ArchitectApi = {
   projects(): Promise<{ root: string; title: string }[]>
-  add(): Promise<{ root: string; title: string } | { error: string } | null>
   open(root: string): Promise<Architecture>
   pending(): Promise<Pending[]>
   decide(id: string, approved: boolean, reason?: string, component?: string): Promise<void>
+  mcpBridgeInfo(): Promise<McpBridgeInfo>
   onChange(fn: (a: Architecture) => void): void
   onPending(fn: (p: Pending[]) => void): void
   onProjects(fn: (p: { root: string; title: string }[]) => void): void
 }
+
+export type McpBridgeInfo = { path: string; exists: boolean }
 
 export type Response =
   | { id: string; ok: true; result: unknown }
