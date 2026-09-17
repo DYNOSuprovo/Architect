@@ -1,5 +1,5 @@
 import dagre from '@dagrejs/dagre'
-import type { CodeMap, FolderEntry, FunctionEntry } from '../shared/types'
+import type { CodeMap, FileEntry, FolderEntry, FunctionEntry } from '../shared/types'
 import { NODE_W, type Pt } from './layout'
 
 export const FUNCTIONS_SHOWN = 8
@@ -8,13 +8,34 @@ export const FILE_BASE_H = 46
 export const FN_ROW_H = 30
 export const FILE_NOTE_H = 20
 
+export const SOURCE_LINES_SHOWN = 22
+export const FN_NODE_W = 470
+export const FN_BASE_H = 44
+export const FN_DESC_H = 26
+export const CODE_LINE_H = 17
+export const CODE_PAD_H = 18
+
 export type Counts = { files: number; functions: number }
+
+export type FnRef = { index: number; name: string }
 
 export type CodeNodeData =
   | { kind: 'folder'; name: string; path: string; counts: Counts }
   | { kind: 'codefile'; name: string; path: string; functions: FunctionEntry[] }
+  | {
+      kind: 'codefn'
+      name: string
+      path: string
+      line: number
+      endLine: number
+      description: string
+      calls: FnRef[]
+      callers: FnRef[]
+    }
 
 export type CodeNode = { id: string; data: CodeNodeData; height: number }
+
+export type CodeLink = { id: string; source: string; target: string }
 
 export type Crumb = { label: string; path: string }
 
@@ -55,11 +76,94 @@ export function subtreeCounts(index: Map<string, FolderEntry>, path: string): Co
   return { files, functions }
 }
 
+export function fileIndex(map: CodeMap): Map<string, FileEntry> {
+  return new Map(map.folders.flatMap((f) => f.files.map((file) => [file.path, file] as const)))
+}
+
+export function worldPath(map: CodeMap, path: string): string {
+  if (map.folders.some((f) => f.path === path)) return path
+  return fileIndex(map).has(path) ? path : ''
+}
+
+export function spanOf(fn: Pick<FunctionEntry, 'line' | 'endLine'>): number {
+  return Math.max(1, fn.endLine - fn.line + 1)
+}
+
+export function hiddenLines(fn: Pick<FunctionEntry, 'line' | 'endLine'>, shown: number): number {
+  return Math.max(0, spanOf(fn) - shown)
+}
+
 export function heightOf(data: CodeNodeData): number {
   if (data.kind === 'folder') return FOLDER_H
+
+  if (data.kind === 'codefn') {
+    const span = spanOf(data)
+    const shown = Math.min(span, SOURCE_LINES_SHOWN)
+    const desc = data.description === '' ? 0 : FN_DESC_H
+    const note = span > SOURCE_LINES_SHOWN ? FILE_NOTE_H : 0
+    return FN_BASE_H + desc + CODE_PAD_H + shown * CODE_LINE_H + note
+  }
+
   const shown = Math.min(data.functions.length, FUNCTIONS_SHOWN)
   const note = data.functions.length === 0 || data.functions.length > FUNCTIONS_SHOWN ? FILE_NOTE_H : 0
   return FILE_BASE_H + shown * FN_ROW_H + note
+}
+
+export function widthOf(data: CodeNodeData): number {
+  return data.kind === 'codefn' ? FN_NODE_W : NODE_W
+}
+
+export function fnNodeId(path: string, index: number, name: string): string {
+  return `codefn:${path}#${index}:${name}`
+}
+
+export function functionNodes(file: FileEntry): CodeNode[] {
+  const refs = file.functions.map((fn, i) => ({ index: i, name: fn.name }))
+
+  const resolved = file.functions.map((fn, i) =>
+    [...new Set(fn.calls)].flatMap((call) => (call === i ? [] : (refs[call] ?? [])))
+  )
+
+  const callers = new Map<number, FnRef[]>()
+  for (const [i, calls] of resolved.entries()) {
+    const from = refs[i]
+    if (from === undefined) continue
+    for (const call of calls) callers.set(call.index, [...(callers.get(call.index) ?? []), from])
+  }
+
+  return file.functions.map((fn, i) => {
+    const data: CodeNodeData = {
+      kind: 'codefn',
+      name: fn.name,
+      path: file.path,
+      line: fn.line,
+      endLine: fn.endLine,
+      description: fn.description,
+      calls: resolved[i] ?? [],
+      callers: callers.get(i) ?? []
+    }
+    return { id: fnNodeId(file.path, i, fn.name), data, height: heightOf(data) }
+  })
+}
+
+export function functionEdges(file: FileEntry): CodeLink[] {
+  const links: CodeLink[] = []
+  const seen = new Set<string>()
+
+  for (const [i, fn] of file.functions.entries()) {
+    const source = fnNodeId(file.path, i, fn.name)
+    for (const call of fn.calls) {
+      const target = file.functions[call]
+      if (target === undefined || call === i) continue
+
+      const link = { id: `${source}->${call}`, source, target: fnNodeId(file.path, call, target.name) }
+      if (seen.has(link.id)) continue
+      seen.add(link.id)
+      links.push(link)
+    }
+  }
+
+  return links
 }
 
 export function worldNodes(index: Map<string, FolderEntry>, path: string): CodeNode[] {
@@ -97,26 +201,36 @@ export function columnsFor(count: number): number {
   return Math.max(1, Math.ceil(Math.sqrt(count)))
 }
 
-export function codePositions(nodes: CodeNode[]): Map<string, Pt> {
+function place(nodes: CodeNode[], links: [string, string][]): Map<string, Pt> {
   const g = new dagre.graphlib.Graph()
   g.setGraph({ rankdir: 'TB', ranksep: 44, nodesep: 30, marginx: 40, marginy: 40 })
   g.setDefaultEdgeLabel(() => ({}))
 
-  for (const n of nodes) g.setNode(n.id, { width: NODE_W, height: n.height })
-
-  // column-chains
-  const columns = columnsFor(nodes.length)
-  for (const [i, n] of nodes.entries()) {
-    const above = nodes[i - columns]
-    if (above) g.setEdge(above.id, n.id)
-  }
+  for (const n of nodes) g.setNode(n.id, { width: widthOf(n.data), height: n.height })
+  for (const [from, to] of links) g.setEdge(from, to)
 
   dagre.layout(g)
 
   return new Map(
     nodes.map((n) => {
       const at = g.node(n.id)
-      return [n.id, { x: at.x - NODE_W / 2, y: at.y - n.height / 2 }]
+      return [n.id, { x: at.x - widthOf(n.data) / 2, y: at.y - n.height / 2 }]
     })
+  )
+}
+
+export function codePositions(nodes: CodeNode[]): Map<string, Pt> {
+  const columns = columnsFor(nodes.length)
+  const chain = nodes.flatMap<[string, string]>((n, i) => {
+    const above = nodes[i - columns]
+    return above ? [[above.id, n.id]] : []
+  })
+  return place(nodes, chain)
+}
+
+export function callPositions(nodes: CodeNode[], links: CodeLink[]): Map<string, Pt> {
+  return place(
+    nodes,
+    links.map((l) => [l.source, l.target])
   )
 }

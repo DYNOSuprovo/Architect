@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { scan } from './scan'
-import type { CodeMap, FolderEntry } from '../shared/types'
+import type { CodeMap, FolderEntry, FunctionEntry } from '../shared/types'
 
 const roots: string[] = []
 
@@ -26,6 +26,19 @@ function folder(map: CodeMap, at: string): FolderEntry {
   const found = map.folders.find((f) => f.path === at)
   if (!found) throw new Error(`missing folder: ${at}`)
   return found
+}
+
+function entries(map: CodeMap, file: string): FunctionEntry[] {
+  const at = file.includes('/') ? file.slice(0, file.lastIndexOf('/')) : ''
+  const entry = folder(map, at).files.find((f) => f.path === file)
+  if (!entry) throw new Error(`missing file: ${file}`)
+  return entry.functions
+}
+
+function calls(map: CodeMap, file: string, name: string): number[] {
+  const fn = entries(map, file).find((f) => f.name === name)
+  if (!fn) throw new Error(`missing function: ${name}`)
+  return [...fn.calls].sort((a, b) => a - b)
 }
 
 function names(map: CodeMap, file: string): string[] {
@@ -201,8 +214,8 @@ describe('scan', () => {
 
     const entry = folder(map, '').files[0]
     expect(entry?.functions).toEqual([
-      { name: 'third', line: 3, description: '' },
-      { name: 'fifth', line: 5, description: '' },
+      { name: 'third', line: 3, endLine: 3, description: '', calls: [] },
+      { name: 'fifth', line: 5, endLine: 5, description: '', calls: [] },
     ])
   })
 
@@ -296,5 +309,180 @@ describe('scan', () => {
 
     expect(first.folders).toEqual(second.folders)
     expect(first.root).toBe(root)
+  })
+})
+
+describe('function spans', () => {
+  it('ends a one line function on the line it starts', async () => {
+    const map = await scan(fixture({ 'a.ts': 'export function a() { return 1 }\n' }))
+
+    expect(entries(map, 'a.ts')).toEqual([
+      { name: 'a', line: 1, endLine: 1, description: '', calls: [] },
+    ])
+  })
+
+  it('covers the whole declaration of a multi line function', async () => {
+    const map = await scan(fixture({ 'a.ts': 'const before = 1\n\nexport function a() {\n  return (\n    2\n  )\n}\n' }))
+
+    expect(entries(map, 'a.ts').map((f) => [f.name, f.line, f.endLine])).toEqual([['a', 3, 7]])
+  })
+
+  it('spans an arrow assigned to a const', async () => {
+    const map = await scan(fixture({ 'a.ts': 'export const a = () => {\n  return 1\n}\n' }))
+
+    expect(entries(map, 'a.ts').map((f) => [f.line, f.endLine])).toEqual([[1, 3]])
+  })
+
+  it('gives a nested function its own span inside the outer one', async () => {
+    const map = await scan(fixture({ 'a.ts': 'function outer() {\n  function inner() {\n    return 1\n  }\n  return inner\n}\n' }))
+
+    expect(entries(map, 'a.ts').map((f) => [f.name, f.line, f.endLine])).toEqual([
+      ['outer', 1, 6],
+      ['inner', 2, 4],
+    ])
+  })
+})
+
+describe('function calls', () => {
+  it('records a bare identifier call', async () => {
+    const map = await scan(fixture({ 'a.ts': 'function helper() {}\nfunction caller() {\n  helper()\n}\n' }))
+
+    expect(calls(map, 'a.ts', 'caller')).toEqual([0])
+    expect(calls(map, 'a.ts', 'helper')).toEqual([])
+  })
+
+  it('records a call to an arrow assigned to a const', async () => {
+    const map = await scan(fixture({ 'a.ts': 'const helper = () => 1\nfunction caller() {\n  return helper()\n}\n' }))
+
+    expect(calls(map, 'a.ts', 'caller')).toEqual([0])
+  })
+
+  it('records a method call on a named object literal', async () => {
+    const map = await scan(
+      fixture({ 'a.ts': 'const obj = {\n  method() {},\n}\nfunction caller() {\n  obj.method()\n}\n' }),
+    )
+
+    expect(names(map, 'a.ts')).toContain('obj.method')
+    expect(calls(map, 'a.ts', 'caller')).toEqual([0])
+  })
+
+  it('records a call to a class method by class name and by this', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': 'class C {\n  m() {}\n  n() {\n    this.m()\n  }\n}\nfunction caller() {\n  C.m()\n}\n',
+      }),
+    )
+
+    expect(calls(map, 'a.ts', 'C.n')).toEqual([0])
+    expect(calls(map, 'a.ts', 'caller')).toEqual([0])
+  })
+
+  it('records self recursion', async () => {
+    const map = await scan(fixture({ 'a.ts': 'function loop(n: number) {\n  return n > 0 ? loop(n - 1) : 0\n}\n' }))
+
+    expect(calls(map, 'a.ts', 'loop')).toEqual([0])
+  })
+
+  it('ignores a call to a function imported from another file', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': "import { helper } from './b'\nexport function caller() {\n  helper()\n}\n",
+        'b.ts': 'export function helper() {}\n',
+      }),
+    )
+
+    expect(calls(map, 'a.ts', 'caller')).toEqual([])
+  })
+
+  it('ignores a callee that matches no function in the file', async () => {
+    const map = await scan(fixture({ 'a.ts': 'function caller() {\n  missing()\n  console.log(1)\n  obj.gone()\n}\n' }))
+
+    expect(calls(map, 'a.ts', 'caller')).toEqual([])
+  })
+
+  it('deduplicates repeated calls', async () => {
+    const map = await scan(fixture({ 'a.ts': 'function helper() {}\nfunction caller() {\n  helper()\n  helper()\n}\n' }))
+
+    expect(calls(map, 'a.ts', 'caller')).toEqual([0])
+  })
+
+  it('keeps a nested function’s calls out of the enclosing function', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': 'function deep() {}\nfunction outer() {\n  const inner = () => deep()\n  return inner\n}\n',
+      }),
+    )
+
+    expect(calls(map, 'a.ts', 'outer')).toEqual([])
+    expect(calls(map, 'a.ts', 'inner')).toEqual([0])
+  })
+
+  it('points a call at the implementation, not an earlier overload signature', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts':
+          'function parse(x: string): number\nfunction parse(x: number): number\nfunction parse(x: unknown): number {\n  return 1\n}\nfunction main() {\n  parse(1)\n}\n',
+      }),
+    )
+
+    expect(entries(map, 'a.ts').map((f) => [f.name, f.line])).toEqual([
+      ['parse', 1],
+      ['parse', 2],
+      ['parse', 3],
+      ['main', 6],
+    ])
+    expect(calls(map, 'a.ts', 'main')).toEqual([2])
+  })
+
+  it('resolves a shadowed local to the binding in its own scope', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts':
+          'function outer() {\n  const visit = () => 1\n  return visit()\n}\nfunction other() {\n  const visit = () => 2\n  return visit()\n}\n',
+      }),
+    )
+
+    expect(entries(map, 'a.ts').map((f) => [f.name, f.line])).toEqual([
+      ['outer', 1],
+      ['visit', 2],
+      ['other', 5],
+      ['visit', 6],
+    ])
+    expect(calls(map, 'a.ts', 'outer')).toEqual([1])
+    expect(entries(map, 'a.ts')[2]?.calls).toEqual([3])
+  })
+
+  it('never resolves an imported name to a local function of the same name', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts':
+          "import { helper } from './b'\nfunction caller() {\n  helper()\n}\nfunction wrap() {\n  const helper = () => 2\n  return helper\n}\n",
+        'b.ts': 'export function helper() {}\n',
+      }),
+    )
+
+    expect(names(map, 'a.ts')).toContain('helper')
+    expect(calls(map, 'a.ts', 'caller')).toEqual([])
+  })
+
+  it('never resolves a call to a name a parameter or a plain local shadows', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts':
+          'function helper() {}\nfunction caller(helper: () => void) {\n  helper()\n}\nfunction local() {\n  const helper = require("x")\n  helper()\n}\n',
+      }),
+    )
+
+    expect(names(map, 'a.ts')).toEqual(['helper', 'caller', 'local'])
+    expect(calls(map, 'a.ts', 'caller')).toEqual([])
+    expect(calls(map, 'a.ts', 'local')).toEqual([])
+  })
+
+  it('records calls made inside an anonymous callback', async () => {
+    const map = await scan(
+      fixture({ 'a.ts': 'function helper(n: number) {\n  return n\n}\nfunction caller(ns: number[]) {\n  return ns.map((n) => helper(n))\n}\n' }),
+    )
+
+    expect(calls(map, 'a.ts', 'caller')).toEqual([0])
   })
 })

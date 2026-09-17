@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Architecture, CodeMap, Edit, EditSummary, McpBridgeInfo, Pending } from '../shared/types'
 import Canvas from './Canvas'
 import CodeCanvas from './CodeCanvas'
-import { crumbs, parentOf } from './codemap'
+import { crumbs, parentOf, worldPath } from './codemap'
 import ConnectMcpPanel from './ConnectMcpPanel'
 import { addComponent, type OpResult } from './edit-ops'
 import { folderName, hasCycle } from './layout'
@@ -288,7 +288,7 @@ export default function App() {
 
   const shown = draft ? draft.architecture : architecture
 
-  const codeWorld = codeMap && codeMap.folders.some((f) => f.path === codePath) ? codePath : ''
+  const codeWorld = codeMap ? worldPath(codeMap, codePath) : ''
   const trail = crumbs(currentRoot ? folderName(currentRoot) : 'root', codeWorld)
   const goUp = useCallback(() => setCodePath(parentOf), [])
 

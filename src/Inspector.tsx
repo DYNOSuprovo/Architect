@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import type { Architecture } from '../shared/types'
-import type { CodeNodeData } from './codemap'
+import type { CodeNodeData, FnRef } from './codemap'
 import { removeComponent, renameComponent, setOwns, setPurpose, type OpResult } from './edit-ops'
 import { statusOf, type NodeData } from './layout'
 
@@ -11,13 +11,42 @@ type InspectorProps = {
   onEdit?: (op: (a: Architecture) => OpResult) => void
 }
 
-export function CodeInspector({ node, onClose }: { node: CodeNodeData; onClose: () => void }) {
+const KINDS = { folder: 'folder', codefile: 'file', codefn: 'function' } as const
+
+function Names({ title, refs }: { title: string; refs: FnRef[] }) {
+  return (
+    <section className="inspector-section">
+      <h3>{title}</h3>
+      {refs.length === 0 ? (
+        <p className="inspector-purpose">None</p>
+      ) : (
+        <ul className="inspector-owns">
+          {refs.map((ref) => (
+            <li key={ref.index} className="code-fn-name">
+              {ref.name}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+export function CodeInspector({
+  node,
+  source,
+  onClose
+}: {
+  node: CodeNodeData
+  source?: string | null
+  onClose: () => void
+}) {
   return (
     <aside className="inspector">
       <div className="inspector-head">
         <div className="inspector-title">
           <span className="inspector-id">{node.name}</span>
-          <span className="inspector-status">{node.kind === 'folder' ? 'folder' : 'file'}</span>
+          <span className="inspector-status">{KINDS[node.kind]}</span>
         </div>
         <button className="inspector-close" onClick={onClose} aria-label="Close inspector">
           ×
@@ -36,6 +65,36 @@ export function CodeInspector({ node, onClose }: { node: CodeNodeData; onClose: 
             {node.counts.files} files · {node.counts.functions} functions
           </p>
         </section>
+      ) : node.kind === 'codefn' ? (
+        <>
+          <section className="inspector-section">
+            <h3>Lines</h3>
+            <p className="inspector-purpose">
+              {node.line}–{node.endLine}
+            </p>
+          </section>
+
+          {node.description !== '' && (
+            <section className="inspector-section">
+              <h3>Description</h3>
+              <p className="inspector-purpose">{node.description}</p>
+            </section>
+          )}
+
+          <Names title="Calls" refs={node.calls} />
+          <Names title="Called by" refs={node.callers} />
+
+          <section className="inspector-section">
+            <h3>Source</h3>
+            {source === null || source === undefined ? (
+              <p className="inspector-purpose">Loading source…</p>
+            ) : source === '' ? (
+              <p className="inspector-purpose">Source unavailable</p>
+            ) : (
+              <pre className="inspector-src">{source}</pre>
+            )}
+          </section>
+        </>
       ) : (
         <section className="inspector-section">
           <h3>Functions</h3>

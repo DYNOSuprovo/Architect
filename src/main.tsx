@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { Architecture, ArchitectApi, CodeMap, Edit, Pending, Proposal } from '../shared/types'
+import type { Architecture, ArchitectApi, CodeMap, Edit, FunctionEntry, Pending, Proposal } from '../shared/types'
 import App from './App'
 import './index.css'
 
@@ -109,8 +109,46 @@ function installMock() {
     return edit
   }
 
-  function mockCodeMap(root: string): CodeMap {
+  type Draft = Omit<FunctionEntry, 'calls'> & { calls: (string | number)[] }
+
+  type DraftMap = {
+    root: string
+    scannedAt: number
+    folders: { path: string; folders: string[]; files: { path: string; functions: Draft[] }[] }[]
+  }
+
+  function fn(
+    name: string,
+    line: number,
+    endLine: number,
+    description: string,
+    calls: (string | number)[] = []
+  ): Draft {
+    return { name, line, endLine, description, calls }
+  }
+
+  function indexed(draft: DraftMap): CodeMap {
     return {
+      ...draft,
+      folders: draft.folders.map((folder) => ({
+        ...folder,
+        files: folder.files.map((file) => ({
+          ...file,
+          functions: file.functions.map((entry) => ({
+            ...entry,
+            calls: entry.calls.flatMap((call) => {
+              if (typeof call === 'number') return file.functions[call] ? [call] : []
+              const at = file.functions.findIndex((other) => other.name === call)
+              return at === -1 ? [] : [at]
+            })
+          }))
+        }))
+      }))
+    }
+  }
+
+  function mockCodeMap(root: string): CodeMap {
+    return indexed({
       root,
       scannedAt: Date.now(),
       folders: [
@@ -120,7 +158,7 @@ function installMock() {
           files: [
             {
               path: 'index.ts',
-              functions: [{ name: 'main', line: 1, description: 'Boots the process and hands control to the app shell.' }]
+              functions: [fn('main', 1, 14, 'Boots the process and hands control to the app shell.')]
             },
             { path: 'vite.config.ts', functions: [] }
           ]
@@ -132,25 +170,39 @@ function installMock() {
             {
               path: 'src/App.tsx',
               functions: [
-                { name: 'App', line: 25, description: 'Holds every screen level state and wires the sidebar to the canvas.' },
-                { name: 'placeholderId', line: 10, description: 'Picks the next unused component id.' },
-                { name: 'describe', line: 17, description: '' }
+                fn('App', 25, 96, 'Holds every screen level state and wires the sidebar to the canvas.', ['placeholderId', 'describe']),
+                fn('placeholderId', 10, 15, 'Picks the next unused component id.'),
+                fn('describe', 17, 23, '')
               ]
             },
             {
               path: 'src/layout.ts',
               functions: [
-                { name: 'findCycleEdges', line: 22, description: 'Walks the edge list backwards to find the path that would close a cycle.' },
-                { name: 'hasCycle', line: 53, description: 'True when adding this edge would close a cycle.' },
-                { name: 'statusOf', line: 57, description: 'The badge word shown on a node.' },
-                { name: 'folderName', line: 63, description: 'Last path segment of a project root.' },
-                { name: 'roleOf', line: 68, description: 'Classifies a component as entry, foundation or middle.' },
-                { name: 'sides', line: 76, description: '' },
-                { name: 'packageBadges', line: 83, description: 'Pending package proposals attached to one component.' },
-                { name: 'build', line: 92, description: 'Turns an architecture plus its pending proposals into nodes and links.' },
-                { name: 'positions', line: 177, description: 'Runs dagre and returns a top left point per node.' },
-                { name: 'anchorTop', line: 186, description: 'Pins entry points to the first rank.' },
-                { name: 'anchorBottom', line: 191, description: 'Pins foundations to the last rank.' }
+                fn('findCycleEdges', 22, 51, 'Walks the edge list backwards to find the path that would close a cycle.'),
+                fn('hasCycle', 53, 55, 'True when adding this edge would close a cycle.', ['findCycleEdges']),
+                fn('statusOf', 57, 61, 'The badge word shown on a node.'),
+                fn('folderName', 63, 66, 'Last path segment of a project root.'),
+                fn('roleOf', 68, 74, 'Classifies a component as entry, foundation or middle.'),
+                fn('sides', 76, 81, ''),
+                fn('packageBadges', 83, 90, 'Pending package proposals attached to one component.'),
+                fn('build', 92, 175, 'Turns an architecture plus its pending proposals into nodes and links.', ['roleOf', 'packageBadges', 'hasCycle', 'statusOf']),
+                fn('positions', 177, 184, 'Runs dagre and returns a top left point per node.', ['anchorTop', 'anchorBottom']),
+                fn('anchorTop', 186, 189, 'Pins entry points to the first rank.'),
+                fn('anchorBottom', 191, 194, 'Pins foundations to the last rank.')
+              ]
+            },
+            {
+              path: 'src/parse.ts',
+              functions: [
+                fn('parse', 3, 3, ''),
+                fn('parse', 4, 4, ''),
+                fn('parse', 6, 18, 'Turns raw text into the tree every reader walks.'),
+                fn('main', 20, 30, 'Reads the argument and hands it to the parser.', [2]),
+                fn('outer', 32, 40, 'Walks one tree with its own visitor.', [5]),
+                fn('visit', 34, 36, 'Visits one node for outer.'),
+                fn('other', 42, 50, 'Walks another tree with its own visitor.', [7]),
+                fn('visit', 44, 46, 'Visits one node for other.'),
+                fn('render', 60, 560, 'Draws the whole report, one block per parsed node.')
               ]
             },
             { path: 'src/types.ts', functions: [] }
@@ -163,18 +215,24 @@ function installMock() {
             {
               path: 'src/workflows/runner.ts',
               functions: [
-                { name: 'run', line: 8, description: 'Executes one workflow step and persists the result.' },
-                { name: 'retry', line: 31, description: '' },
-                { name: 'cancel', line: 44, description: 'Marks the run cancelled and releases its lock.' },
-                { name: 'resume', line: 58, description: '' },
-                { name: 'status', line: 70, description: 'Current state of a run, cheap enough to poll.' }
+                fn('run', 8, 34, 'Executes one workflow step and persists the result.', ['validate', 'load', 'execute', 'persist']),
+                fn('validate', 38, 46, 'Rejects a run whose input does not match the step schema.'),
+                fn('load', 50, 62, 'Reads the stored run record, falling back to a fresh one.', ['cacheKey']),
+                fn('execute', 66, 92, 'Drives the step body and decides whether to retry it.', ['step', 'retry']),
+                fn('step', 96, 108, 'Runs exactly one attempt of the step body.', ['cacheKey']),
+                fn('retry', 112, 130, 'Backs off and tries the step again until the budget runs out.', ['retry', 'step']),
+                fn('persist', 134, 150, 'Writes the run result back to storage.', ['cacheKey']),
+                fn('cacheKey', 154, 160, 'Stable key for one run of one step.'),
+                fn('report', 164, 352, 'Renders the full run report, one section per attempt, for the operator console.'),
+                fn('noop', 356, 358, '')
               ]
             },
             {
               path: 'src/workflows/queue.ts',
               functions: [
-                { name: 'push', line: 4, description: 'Appends a job and wakes a sleeping worker.' },
-                { name: 'drain', line: 19, description: 'Pops jobs until the queue is empty.' }
+                fn('push', 4, 17, 'Appends a job and wakes a sleeping worker.', ['wake']),
+                fn('wake', 19, 28, 'Signals one idle worker that there is work.'),
+                fn('drain', 30, 48, 'Pops jobs until the queue is empty.', ['push'])
               ]
             }
           ]
@@ -185,7 +243,7 @@ function installMock() {
           files: [
             {
               path: 'src/ui/Button.tsx',
-              functions: [{ name: 'Button', line: 3, description: 'The only button in the app, themed from custom properties.' }]
+              functions: [fn('Button', 3, 21, 'The only button in the app, themed from custom properties.')]
             }
           ]
         },
@@ -196,10 +254,10 @@ function installMock() {
             {
               path: 'src/ui/panels/Inspector.tsx',
               functions: [
-                { name: 'Inspector', line: 13, description: 'Side panel for the selected node.' },
-                { name: 'commit', line: 19, description: 'Applies one edit operation and forces a rerender.' },
-                { name: 'blurOnEnter', line: 25, description: '' },
-                { name: 'drop', line: 29, description: 'Confirms, then deletes the component and its edges.' }
+                fn('Inspector', 13, 60, 'Side panel for the selected node.', ['commit', 'blurOnEnter', 'drop']),
+                fn('commit', 19, 24, 'Applies one edit operation and forces a rerender.'),
+                fn('blurOnEnter', 25, 28, ''),
+                fn('drop', 29, 34, 'Confirms, then deletes the component and its edges.', ['commit'])
               ]
             }
           ]
@@ -211,19 +269,19 @@ function installMock() {
             {
               path: 'electron/main.ts',
               functions: [
-                { name: 'createWindow', line: 12, description: 'Opens the single browser window and loads the renderer.' },
-                { name: 'registerIpc', line: 40, description: 'Binds every renderer channel to a store call.' },
-                { name: 'watchProjects', line: 66, description: 'Reloads an architecture when its file changes on disk.' },
-                { name: 'quit', line: 88, description: '' },
-                { name: 'openProject', line: 95, description: 'Reads one project root and caches its architecture.' },
-                { name: 'scanCode', line: 120, description: 'Walks the repo and asks the model to describe each function.' }
+                fn('createWindow', 12, 38, 'Opens the single browser window and loads the renderer.'),
+                fn('registerIpc', 40, 64, 'Binds every renderer channel to a store call.', ['openProject', 'scanCode']),
+                fn('watchProjects', 66, 86, 'Reloads an architecture when its file changes on disk.', ['openProject']),
+                fn('quit', 88, 93, ''),
+                fn('openProject', 95, 118, 'Reads one project root and caches its architecture.'),
+                fn('scanCode', 120, 168, 'Walks the repo and asks the model to describe each function.')
               ]
             },
             {
               path: 'electron/preload.ts',
               functions: [
-                { name: 'expose', line: 6, description: 'Publishes the architect API on the window object.' },
-                { name: 'invoke', line: 22, description: '' }
+                fn('expose', 6, 20, 'Publishes the architect API on the window object.', ['invoke']),
+                fn('invoke', 22, 30, '')
               ]
             }
           ]
@@ -235,21 +293,44 @@ function installMock() {
             {
               path: 'mcp/server.ts',
               functions: [
-                { name: 'getArchitecture', line: 14, description: 'Returns the current architecture for a working directory.' },
-                { name: 'checkChange', line: 32, description: 'Answers whether one component may depend on another.' },
-                { name: 'proposeChange', line: 51, description: 'Queues a proposal for human approval.' },
-                { name: 'awaitProposal', line: 74, description: 'Blocks until the human approves or rejects.' },
-                { name: 'listEdits', line: 96, description: 'Every draft and handed edit for a project.' },
-                { name: 'getEdit', line: 112, description: 'One edit by id.' },
-                { name: 'connect', line: 130, description: 'Opens the unix socket to the desktop app.' },
-                { name: 'send', line: 148, description: '' },
-                { name: 'main', line: 170, description: 'Starts the stdio transport.' }
+                fn('getArchitecture', 14, 30, 'Returns the current architecture for a working directory.', ['send']),
+                fn('checkChange', 32, 49, 'Answers whether one component may depend on another.', ['send']),
+                fn('proposeChange', 51, 72, 'Queues a proposal for human approval.', ['send']),
+                fn('awaitProposal', 74, 94, 'Blocks until the human approves or rejects.', ['send']),
+                fn('listEdits', 96, 110, 'Every draft and handed edit for a project.', ['send']),
+                fn('getEdit', 112, 128, 'One edit by id.', ['send']),
+                fn('connect', 130, 146, 'Opens the unix socket to the desktop app.'),
+                fn('send', 148, 168, '', ['connect']),
+                fn('main', 170, 186, 'Starts the stdio transport.', ['getArchitecture', 'checkChange', 'proposeChange', 'awaitProposal', 'listEdits', 'getEdit'])
               ]
             }
           ]
         }
       ]
+    })
+  }
+
+  function mockFileText(root: string, path: string): string {
+    const entry = mockCodeMap(root).folders.flatMap((f) => f.files).find((f) => f.path === path)
+    if (!entry) return ''
+
+    const lines: string[] = []
+    for (const f of entry.functions) {
+      while (lines.length < f.line - 1) lines.push('')
+      const body = Math.max(0, f.endLine - f.line - 1)
+      lines.push(`export function ${f.name}(input: Input, options: Options = {}): Result {`)
+      for (let i = 0; i < body; i += 1) {
+        const at = f.calls[i % Math.max(1, f.calls.length)]
+        const call = at === undefined ? undefined : entry.functions[at]?.name
+        lines.push(
+          call && i % 3 === 0
+            ? `  const step${i} = ${call}(input, { ...options, attempt: ${i} })`
+            : `  if (!input.ready) return { ok: false, at: ${f.line + i + 1}, reason: 'not ready yet' }`
+        )
+      }
+      if (f.endLine > f.line) lines.push('}')
     }
+    return lines.join('\n')
   }
 
   const codeMaps: Record<string, CodeMap> = {
@@ -346,6 +427,11 @@ function installMock() {
     },
     async getCodeMap(root) {
       return codeMaps[root] ?? null
+    },
+    async readSource(root, file, from, to) {
+      const lines = mockFileText(root, file).split('\n')
+      if (from < 1 || to < from) return ''
+      return lines.slice(from - 1, Math.min(to, from + 399)).join('\n')
     },
     async rescan(root) {
       const scanned = mockCodeMap(root)
