@@ -11,20 +11,16 @@ import {
   folderIndex,
   functionEdges,
   functionNodes,
+  hangingIndent,
   heightOf,
   parentOf,
-  hiddenLines,
-  spanOf,
   subtreeCounts,
   widthOf,
   worldNodes,
   worldPath,
-  CODE_LINE_H,
-  CODE_PAD_H,
   FN_BASE_H,
   FN_DESC_H,
   FN_NODE_W,
-  SOURCE_LINES_SHOWN,
   FILE_BASE_H,
   FILE_NOTE_H,
   FN_ROW_H,
@@ -261,56 +257,63 @@ describe('fileIndex and worldPath', () => {
   })
 })
 
-describe('spanOf', () => {
-  it('counts both ends of the range', () => {
-    expect(spanOf({ line: 10, endLine: 10 })).toBe(1)
-    expect(spanOf({ line: 10, endLine: 12 })).toBe(3)
+describe('hangingIndent', () => {
+  it('hangs a wrapped line past the indent it started at', () => {
+    expect(hangingIndent('const a = 1')).toBe(2)
+    expect(hangingIndent('  if (ready) return')).toBe(4)
+    expect(hangingIndent('      const merged = await gather()')).toBe(8)
   })
 
-  it('never drops below one line on a broken range', () => {
-    expect(spanOf({ line: 10, endLine: 4 })).toBe(1)
-  })
-})
-
-describe('hiddenLines', () => {
-  it('counts every line the card does not show, past the read cap', () => {
-    expect(hiddenLines({ line: 1, endLine: 501 }, SOURCE_LINES_SHOWN)).toBe(479)
-    expect(hiddenLines({ line: 1, endLine: 30 }, SOURCE_LINES_SHOWN)).toBe(8)
+  it('measures a tab as one tab stop', () => {
+    expect(hangingIndent('\tif (ready) return')).toBe(4)
+    expect(hangingIndent('\t\tif (ready) return')).toBe(6)
+    expect(hangingIndent('\t  mixed')).toBe(6)
   })
 
-  it('never goes negative when the whole function is shown', () => {
-    expect(hiddenLines({ line: 1, endLine: 4 }, 4)).toBe(0)
-    expect(hiddenLines({ line: 10, endLine: 4 }, 1)).toBe(0)
+  it('handles a line that is empty or all whitespace', () => {
+    expect(hangingIndent('')).toBe(2)
+    expect(hangingIndent('    ')).toBe(6)
   })
 })
 
 describe('function node size', () => {
-  const at = (line: number, endLine: number, description = '') =>
+  const at = (description: string) =>
     heightOf({
       kind: 'codefn',
       name: 'run',
       path: 'a.ts',
-      line,
-      endLine,
+      line: 1,
+      endLine: 900,
       description,
       calls: [],
       callers: []
     })
 
-  it('grows one row per source line', () => {
-    expect(at(1, 1)).toBe(FN_BASE_H + CODE_PAD_H + CODE_LINE_H)
-    expect(at(1, 6)).toBe(FN_BASE_H + CODE_PAD_H + 6 * CODE_LINE_H)
+  it('ignores the line span now that the card carries no source', () => {
+    expect(at('')).toBe(FN_BASE_H)
+    expect(
+      heightOf({ kind: 'codefn', name: 'run', path: 'a.ts', line: 1, endLine: 1, description: '', calls: [], callers: [] })
+    ).toBe(FN_BASE_H)
   })
 
-  it('caps the source and adds one note line past the cap', () => {
-    const capped = FN_BASE_H + CODE_PAD_H + SOURCE_LINES_SHOWN * CODE_LINE_H + FILE_NOTE_H
-    expect(at(1, SOURCE_LINES_SHOWN + 1)).toBe(capped)
-    expect(at(1, 900)).toBe(capped)
+  it('adds one row for a description', () => {
+    expect(at('Runs it.') - at('')).toBe(FN_DESC_H)
   })
 
-  it('adds a row for a description and is wider than a file card', () => {
-    expect(at(1, 3, 'Runs it.') - at(1, 3)).toBe(FN_DESC_H)
-    expect(widthOf({ kind: 'codefn', name: 'run', path: 'a.ts', line: 1, endLine: 2, description: '', calls: [], callers: [] })).toBe(FN_NODE_W)
+  it('stays close to a file card and wider than one', () => {
+    const fnWidth = widthOf({
+      kind: 'codefn',
+      name: 'run',
+      path: 'a.ts',
+      line: 1,
+      endLine: 2,
+      description: '',
+      calls: [],
+      callers: []
+    })
+    expect(fnWidth).toBe(FN_NODE_W)
+    expect(fnWidth).toBeGreaterThan(NODE_W)
+    expect(fnWidth).toBeLessThan(NODE_W * 1.5)
     expect(widthOf({ kind: 'folder', name: 'src', path: 'src', counts: { files: 0, functions: 0 } })).toBe(NODE_W)
   })
 })

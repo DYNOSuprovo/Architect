@@ -322,6 +322,13 @@ function installMock() {
       for (let i = 0; i < body; i += 1) {
         const at = f.calls[i % Math.max(1, f.calls.length)]
         const call = at === undefined ? undefined : entry.functions[at]?.name
+        if (i % 5 === 4) {
+          lines.push(
+            `      const merged = await gather(input.records.filter((r) => r.active && r.owner === options.owner), { retries: 3, timeout: 15000, label: 'attempt ${i}' })`
+          )
+          continue
+        }
+
         lines.push(
           call && i % 3 === 0
             ? `  const step${i} = ${call}(input, { ...options, attempt: ${i} })`
