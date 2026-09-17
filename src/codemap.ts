@@ -3,17 +3,14 @@ import type { CodeMap, FileEntry, FolderEntry, FunctionEntry } from '../shared/t
 import { NODE_W, type Pt } from './layout'
 
 export const FUNCTIONS_SHOWN = 8
-export const FOLDER_H = 72
+export const FOLDER_H = 56
 export const FILE_BASE_H = 46
 export const FN_ROW_H = 30
 export const FILE_NOTE_H = 20
 
-export const SOURCE_LINES_SHOWN = 22
-export const FN_NODE_W = 470
+export const FN_NODE_W = 240
 export const FN_BASE_H = 44
-export const FN_DESC_H = 26
-export const CODE_LINE_H = 17
-export const CODE_PAD_H = 18
+export const FN_DESC_H = 30
 
 export type Counts = { files: number; functions: number }
 
@@ -85,24 +82,16 @@ export function worldPath(map: CodeMap, path: string): string {
   return fileIndex(map).has(path) ? path : ''
 }
 
-export function spanOf(fn: Pick<FunctionEntry, 'line' | 'endLine'>): number {
-  return Math.max(1, fn.endLine - fn.line + 1)
-}
-
-export function hiddenLines(fn: Pick<FunctionEntry, 'line' | 'endLine'>, shown: number): number {
-  return Math.max(0, spanOf(fn) - shown)
+export function hangingIndent(line: string): number {
+  const lead = line.length - line.trimStart().length
+  const width = [...line.slice(0, lead)].reduce((n, c) => n + (c === '\t' ? 2 : 1), 0)
+  return width + 2
 }
 
 export function heightOf(data: CodeNodeData): number {
   if (data.kind === 'folder') return FOLDER_H
 
-  if (data.kind === 'codefn') {
-    const span = spanOf(data)
-    const shown = Math.min(span, SOURCE_LINES_SHOWN)
-    const desc = data.description === '' ? 0 : FN_DESC_H
-    const note = span > SOURCE_LINES_SHOWN ? FILE_NOTE_H : 0
-    return FN_BASE_H + desc + CODE_PAD_H + shown * CODE_LINE_H + note
-  }
+  if (data.kind === 'codefn') return FN_BASE_H + (data.description === '' ? 0 : FN_DESC_H)
 
   const shown = Math.min(data.functions.length, FUNCTIONS_SHOWN)
   const note = data.functions.length === 0 || data.functions.length > FUNCTIONS_SHOWN ? FILE_NOTE_H : 0

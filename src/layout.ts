@@ -17,6 +17,19 @@ export type NodeData = {
 export const NODE_W = 220
 export const NODE_H = 104
 
+export const INSPECTOR_W = 640
+export const INSPECTOR_MIN_W = 300
+export const INSPECTOR_MAX_W = 960
+export const INSPECTOR_SHARE = 0.7
+
+export function clampInspectorWidth(px: number, stage: number): number {
+  const share = Number.isFinite(stage) ? stage * INSPECTOR_SHARE : INSPECTOR_MAX_W
+  const max = Math.min(INSPECTOR_MAX_W, share)
+  const min = Math.min(INSPECTOR_MIN_W, max)
+  if (!Number.isFinite(px)) return Math.round(Math.min(INSPECTOR_W, max))
+  return Math.round(Math.min(Math.max(px, min), max))
+}
+
 export type Pt = { x: number; y: number }
 
 export function findCycleEdges(edges: Edge[], from: string, to: string): Edge[] | null {
