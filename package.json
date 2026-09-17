@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "shot": "node scripts/shot.mjs",
-    "shot:app": "node scripts/shot-app.mjs"
+    "shot:app": "node scripts/shot-app.mjs",
+    "shots": "node scripts/shots.mjs"
   },
   "dependencies": {
     "@dagrejs/dagre": "^1.1.4",
