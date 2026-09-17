@@ -12,12 +12,12 @@ declare global {
 
 function installMock() {
   const roots = {
-    '/Users/demo/code/reporter/bot': 'Architecture',
-    '/Users/demo/code/reporter/dashboard': 'Architecture'
+    '/Users/demo/code/architect': 'Architecture',
+    '/Users/demo/code/architect-docs': 'Architecture'
   }
 
   const architectures: Record<string, Architecture> = {
-    '/Users/demo/code/reporter/bot': {
+    '/Users/demo/code/architect': {
       title: 'Architecture',
       summary: 'A small service split into API, database access and background workers.',
       components: [
@@ -39,7 +39,7 @@ function installMock() {
       forbidden: [{ from: 'db', to: 'api', reason: 'db must not depend on api' }],
       packages: ['express', 'pg']
     },
-    '/Users/demo/code/reporter/dashboard': {
+    '/Users/demo/code/architect-docs': {
       title: 'Architecture',
       summary: 'Empty scaffold, nothing drawn yet.',
       components: [],
@@ -50,56 +50,56 @@ function installMock() {
   }
 
   const pendingByRoot: Record<string, Pending[]> = {
-    '/Users/demo/code/reporter/bot': [
+    '/Users/demo/code/architect': [
       {
         id: 'p1',
-        projectRoot: '/Users/demo/code/reporter/bot',
+        projectRoot: '/Users/demo/code/architect',
         proposal: { kind: 'component', id: 'cache', purpose: 'Redis cache layer', owns: ['src/cache/**'] },
         rationale: 'Repeated db reads on hot paths need caching.',
         createdAt: Date.now() - 60_000
       },
       {
         id: 'p2',
-        projectRoot: '/Users/demo/code/reporter/bot',
+        projectRoot: '/Users/demo/code/architect',
         proposal: { kind: 'edge', from: 'db', to: 'api' },
         rationale: 'db needs to call back into the api client for notifications.',
         createdAt: Date.now() - 50_000
       },
       {
         id: 'p3',
-        projectRoot: '/Users/demo/code/reporter/bot',
+        projectRoot: '/Users/demo/code/architect',
         proposal: { kind: 'package', name: 'zod', component: 'api' },
         rationale: 'Request validation at the boundary.',
         createdAt: Date.now() - 40_000
       },
       {
         id: 'p4',
-        projectRoot: '/Users/demo/code/reporter/bot',
+        projectRoot: '/Users/demo/code/architect',
         proposal: { kind: 'file', path: 'src/api/routes/users.ts', component: 'api' },
         rationale: 'New route file for the users resource.',
         createdAt: Date.now() - 30_000
       },
       {
         id: 'p5',
-        projectRoot: '/Users/demo/code/reporter/bot',
+        projectRoot: '/Users/demo/code/architect',
         proposal: { kind: 'file', path: 'src/legacy/old.ts', component: 'legacy' },
         rationale: 'Migrated file with no clear owner yet.',
         createdAt: Date.now() - 20_000
       },
       {
         id: 'p6',
-        projectRoot: '/Users/demo/code/reporter/bot',
+        projectRoot: '/Users/demo/code/architect',
         proposal: { kind: 'edge', from: 'ghost-comp', to: 'api' },
         rationale: 'Stale proposal referencing a component that was since removed.',
         createdAt: Date.now() - 10_000
       }
     ],
-    '/Users/demo/code/reporter/dashboard': []
+    '/Users/demo/code/architect-docs': []
   }
 
   const editsByRoot: Record<string, Edit[]> = {
-    '/Users/demo/code/reporter/bot': [],
-    '/Users/demo/code/reporter/dashboard': []
+    '/Users/demo/code/architect': [],
+    '/Users/demo/code/architect-docs': []
   }
   let editCounter = 0
 
@@ -356,7 +356,7 @@ function installMock() {
   }
 
   const codeMaps: Record<string, CodeMap> = {
-    '/Users/demo/code/reporter/bot': mockCodeMap('/Users/demo/code/reporter/bot')
+    '/Users/demo/code/architect': mockCodeMap('/Users/demo/code/architect')
   }
 
   const changeListeners = new Set<(a: Architecture) => void>()
@@ -389,7 +389,7 @@ function installMock() {
       return arch
     },
     async pending() {
-      return pendingByRoot['/Users/demo/code/reporter/bot'] ?? []
+      return pendingByRoot['/Users/demo/code/architect'] ?? []
     },
     async mcpBridgeInfo() {
       return { path: '/Users/demo/.architect/bin/architect-mcp.mjs', exists: true }
@@ -408,7 +408,7 @@ function installMock() {
               : item.proposal
           apply(root, proposal)
         }
-        pendingListeners.forEach((fn) => fn(list))
+        pendingListeners.forEach((fn) => fn([...list]))
         return
       }
       void reason
