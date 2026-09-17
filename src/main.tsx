@@ -154,14 +154,29 @@ function installMock() {
       folders: [
         {
           path: '',
-          folders: ['src', 'electron', 'mcp'],
+          folders: ['src', 'electron', 'mcp', 'docs'],
           files: [
             {
               path: 'index.ts',
               functions: [fn('main', 1, 14, 'Boots the process and hands control to the app shell.')]
             },
-            { path: 'vite.config.ts', functions: [] }
+            { path: 'vite.config.ts', functions: [] },
+            { path: 'package.json', functions: [] },
+            { path: 'README.md', functions: [] }
           ]
+        },
+        {
+          path: 'docs',
+          folders: ['docs/img'],
+          files: [
+            { path: 'docs/guide.md', functions: [] },
+            { path: 'docs/changelog.md', functions: [] }
+          ]
+        },
+        {
+          path: 'docs/img',
+          folders: [],
+          files: [{ path: 'docs/img/hero.svg', functions: [] }]
         },
         {
           path: 'src',

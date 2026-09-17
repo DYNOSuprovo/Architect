@@ -77,9 +77,18 @@ export function fileIndex(map: CodeMap): Map<string, FileEntry> {
   return new Map(map.folders.flatMap((f) => f.files.map((file) => [file.path, file] as const)))
 }
 
+export function hasCode(index: Map<string, FolderEntry>, path: string): boolean {
+  return subtreeCounts(index, path).functions > 0
+}
+
 export function worldPath(map: CodeMap, path: string): string {
-  if (map.folders.some((f) => f.path === path)) return path
-  return fileIndex(map).has(path) ? path : ''
+  const file = fileIndex(map).get(path)
+  if (file) return file.functions.length > 0 ? path : worldPath(map, parentOf(path))
+
+  const index = folderIndex(map)
+  let walked = path
+  while (walked !== '' && !hasCode(index, walked)) walked = parentOf(walked)
+  return index.has(walked) ? walked : ''
 }
 
 export function hangingIndent(line: string): number {
@@ -159,19 +168,23 @@ export function worldNodes(index: Map<string, FolderEntry>, path: string): CodeN
   const entry = index.get(path)
   if (!entry) return []
 
-  const folders: CodeNodeData[] = entry.folders.map((child) => ({
-    kind: 'folder',
-    name: baseName(child),
-    path: child,
-    counts: subtreeCounts(index, child)
-  }))
+  const folders: CodeNodeData[] = entry.folders
+    .filter((child) => hasCode(index, child))
+    .map((child) => ({
+      kind: 'folder',
+      name: baseName(child),
+      path: child,
+      counts: subtreeCounts(index, child)
+    }))
 
-  const files: CodeNodeData[] = entry.files.map((file) => ({
-    kind: 'codefile',
-    name: baseName(file.path),
-    path: file.path,
-    functions: file.functions
-  }))
+  const files: CodeNodeData[] = entry.files
+    .filter((file) => file.functions.length > 0)
+    .map((file) => ({
+      kind: 'codefile',
+      name: baseName(file.path),
+      path: file.path,
+      functions: file.functions
+    }))
 
   return [...folders, ...files].map((data) => ({ id: `${data.kind}:${data.path}`, data, height: heightOf(data) }))
 }
