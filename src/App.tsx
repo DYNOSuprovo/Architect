@@ -290,7 +290,7 @@ export default function App() {
 
   const codeWorld = codeMap ? worldPath(codeMap, codePath) : ''
   const trail = crumbs(currentRoot ? folderName(currentRoot) : 'root', codeWorld)
-  const goUp = useCallback(() => setCodePath(parentOf), [])
+  const goUp = useCallback(() => setCodePath(parentOf(codeWorld)), [codeWorld])
 
   const openConnectMcp = useCallback(() => {
     setShowConnectMcp(true)

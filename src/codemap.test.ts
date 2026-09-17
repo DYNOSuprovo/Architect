@@ -143,8 +143,8 @@ describe('worldNodes', () => {
 
   it('lists immediate folders before immediate files', () => {
     const nodes = worldNodes(index, '')
-    expect(nodes.map((n) => n.data.kind)).toEqual(['folder', 'folder', 'codefile'])
-    expect(nodes.map((n) => n.data.name)).toEqual(['src', 'mcp', 'index.ts'])
+    expect(nodes.map((n) => n.data.kind)).toEqual(['folder', 'codefile'])
+    expect(nodes.map((n) => n.data.name)).toEqual(['src', 'index.ts'])
   })
 
   it('carries subtree counts on folder nodes', () => {
@@ -160,6 +160,46 @@ describe('worldNodes', () => {
 
   it('is empty for a folder that is not in the map', () => {
     expect(worldNodes(index, 'ghost')).toEqual([])
+  })
+
+  it('leaves out a file with no functions', () => {
+    const withReadme = folderIndex(
+      map([{ path: '', folders: [], files: [{ path: 'README.md', functions: [] }, { path: 'a.ts', functions: fns(1) }] }])
+    )
+    expect(worldNodes(withReadme, '').map((n) => n.data.name)).toEqual(['a.ts'])
+  })
+
+  it('leaves out a folder whose whole subtree has no functions', () => {
+    expect(worldNodes(index, '').some((n) => n.data.path === 'mcp')).toBe(false)
+  })
+
+  it('keeps a folder whose only functions sit in a deep descendant', () => {
+    const deep = folderIndex(
+      map([
+        { path: '', folders: ['a'], files: [] },
+        { path: 'a', folders: ['a/b'], files: [{ path: 'a/notes.md', functions: [] }] },
+        { path: 'a/b', folders: ['a/b/c'], files: [] },
+        { path: 'a/b/c', folders: [], files: [{ path: 'a/b/c/deep.ts', functions: fns(2) }] }
+      ])
+    )
+    expect(worldNodes(deep, '').map((n) => n.data.path)).toEqual(['a'])
+    expect(worldNodes(deep, 'a').map((n) => n.data.path)).toEqual(['a/b'])
+    expect(worldNodes(deep, 'a/b/c').map((n) => n.data.path)).toEqual(['a/b/c/deep.ts'])
+  })
+
+  it('keeps folder counts accurate for everything the folder really holds', () => {
+    const src = worldNodes(index, '').find((n) => n.data.path === 'src')
+    expect(src?.data.kind === 'folder' && src.data.counts).toEqual(subtreeCounts(index, 'src'))
+  })
+
+  it('shows nothing at all when no file anywhere has a function', () => {
+    const barren = folderIndex(
+      map([
+        { path: '', folders: ['docs'], files: [{ path: 'package.json', functions: [] }] },
+        { path: 'docs', folders: [], files: [{ path: 'docs/readme.md', functions: [] }] }
+      ])
+    )
+    expect(worldNodes(barren, '')).toEqual([])
   })
 })
 
@@ -250,10 +290,29 @@ describe('fileIndex and worldPath', () => {
     expect(fileIndex(withFile).get('src/ghost.ts')).toBeUndefined()
   })
 
-  it('accepts a folder world and a file world, and nothing else', () => {
+  it('accepts a folder world and a file world', () => {
     expect(worldPath(withFile, 'src')).toBe('src')
     expect(worldPath(withFile, 'src/runner.ts')).toBe('src/runner.ts')
-    expect(worldPath(withFile, 'src/ghost.ts')).toBe('')
+  })
+
+  it('falls back to the nearest world that still has code', () => {
+    const mixed = map([
+      { path: '', folders: ['src', 'docs'], files: [] },
+      { path: 'src', folders: [], files: [chart, { path: 'src/types.ts', functions: [] }] },
+      { path: 'docs', folders: ['docs/img'], files: [{ path: 'docs/readme.md', functions: [] }] },
+      { path: 'docs/img', folders: [], files: [] }
+    ])
+
+    expect(worldPath(mixed, 'src/types.ts')).toBe('src')
+    expect(worldPath(mixed, 'docs/img')).toBe('')
+    expect(worldPath(mixed, 'docs/readme.md')).toBe('')
+    expect(worldPath(mixed, 'src/ghost.ts')).toBe('src')
+  })
+
+  it('falls back to the root when nothing at all has code', () => {
+    const barren = map([{ path: '', folders: [], files: [{ path: 'readme.md', functions: [] }] }])
+    expect(worldPath(barren, 'readme.md')).toBe('')
+    expect(worldPath(barren, '')).toBe('')
   })
 })
 

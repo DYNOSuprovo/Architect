@@ -253,7 +253,7 @@ export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanv
       </Picked.Provider>
       {world.nodes.length === 0 && (
         <div className="empty-state code-empty">
-          {file ? 'This file has no functions' : 'This folder is empty'}
+          {file ? 'This file has no functions' : 'No code here yet'}
         </div>
       )}
       {selected && <CodeInspector key={selectedId} node={selected} source={source} onClose={close} />}
