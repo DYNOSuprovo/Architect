@@ -19,6 +19,8 @@
   --ink: #7d8794;
   --label-bg: #11141a;
   --dots: #1e232c;
+  --folder: #e2b45e;
+  --fn: #9ecbff;
   --font: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
   --mono: 'SF Mono', 'JetBrains Mono', ui-monospace, monospace;
 }
@@ -44,6 +46,8 @@
   --ink: #5b6472;
   --label-bg: #ffffff;
   --dots: #ced4de;
+  --folder: #925c11;
+  --fn: #1f4fb8;
 }
 
 * {
@@ -836,7 +840,9 @@ body {
   margin-left: auto;
 }
 
-.edit-bar button {
+.edit-bar button,
+.code-bar button,
+.code-blank button {
   font: inherit;
   font-size: 12px;
   padding: 6px 12px;
@@ -847,29 +853,38 @@ body {
   cursor: pointer;
 }
 
-.edit-bar button:hover:not(:disabled) {
+.edit-bar button:hover:not(:disabled),
+.code-bar button:hover:not(:disabled),
+.code-blank button:hover:not(:disabled) {
   background: var(--hover);
 }
 
-.edit-bar button:focus-visible {
+.edit-bar button:focus-visible,
+.code-bar button:focus-visible,
+.code-blank button:focus-visible {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
-.edit-bar button:disabled {
+.edit-bar button:disabled,
+.code-bar button:disabled {
   opacity: 0.5;
   cursor: default;
 }
 
-.edit-bar .primary {
+.edit-bar .primary,
+.code-bar .primary,
+.code-blank .primary {
   border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
   background: color-mix(in srgb, var(--accent) 14%, var(--panel));
   color: var(--accent);
   font-weight: 600;
 }
 
-.edit-bar .primary:hover:not(:disabled) {
+.edit-bar .primary:hover:not(:disabled),
+.code-bar .primary:hover:not(:disabled),
+.code-blank .primary:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 22%, var(--panel));
 }
 
@@ -884,13 +899,15 @@ body {
   background: color-mix(in srgb, var(--propose) 24%, var(--panel));
 }
 
-.edit-bar .ghost {
+.edit-bar .ghost,
+.code-bar .ghost {
   border-color: transparent;
   background: transparent;
   color: var(--text-dim);
 }
 
-.edit-bar .ghost:hover:not(:disabled) {
+.edit-bar .ghost:hover:not(:disabled),
+.code-bar .ghost:hover:not(:disabled) {
   color: var(--text);
   background: var(--hover);
 }
@@ -989,4 +1006,235 @@ body {
 .canvas-editing .react-flow__handle:hover {
   background: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+.canvas-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mode-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--sunken);
+}
+
+.mode {
+  font: inherit;
+  font-size: 11.5px;
+  padding: 4px 11px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.mode:hover {
+  color: var(--text);
+}
+
+.mode.active {
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px var(--shadow);
+}
+
+.mode:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.code-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 24px;
+  background: var(--raise);
+  border-bottom: 1px solid var(--border);
+}
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1px;
+  min-width: 0;
+}
+
+.crumb {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.crumb:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.crumb.current {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.crumb-sep {
+  color: var(--text-dim);
+  opacity: 0.45;
+  font-size: 12px;
+}
+
+.code-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.code-node.picked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent), 0 6px 16px var(--shadow);
+}
+
+.code-node {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  padding: 9px 12px 10px;
+}
+
+.code-folder .node-id {
+  color: var(--folder);
+}
+
+.code-folder .node-role {
+  color: var(--folder);
+  opacity: 0.85;
+}
+
+.code-counts {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 5px;
+}
+
+.code-hint {
+  margin-top: auto;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  opacity: 0.5;
+}
+
+.code-fns {
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+}
+
+.code-fn {
+  height: 30px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-top: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.code-fn-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fn);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.code-fn-desc {
+  font-size: 10px;
+  line-height: 1.25;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.code-note {
+  height: 20px;
+  display: flex;
+  align-items: center;
+  font-size: 10px;
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+
+.inspector-fns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.inspector-fns .code-fn-name {
+  font-size: 12px;
+}
+
+.inspector-fn-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.inspector-fn-line {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.inspector-fn-desc {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.code-empty {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.code-blank {
+  flex-direction: column;
+  gap: 12px;
+  text-align: center;
+  padding: 0 24px;
+}
+
+.code-blank p {
+  margin: 0;
+}
+
+.code-error {
+  color: var(--danger);
+  font-size: 12px;
 }

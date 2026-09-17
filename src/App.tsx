@@ -1,11 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { Architecture, Edit, EditSummary, McpBridgeInfo, Pending } from '../shared/types'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { Architecture, CodeMap, Edit, EditSummary, McpBridgeInfo, Pending } from '../shared/types'
 import Canvas from './Canvas'
+import CodeCanvas from './CodeCanvas'
+import { crumbs, parentOf } from './codemap'
 import ConnectMcpPanel from './ConnectMcpPanel'
 import { addComponent, type OpResult } from './edit-ops'
 import { folderName, hasCycle } from './layout'
 
 type ProjectSummary = { root: string; title: string }
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
 
 function placeholderId(a: Architecture): string {
   const taken = new Set(a.components.map((c) => c.id))
@@ -38,6 +44,11 @@ export default function App() {
   const [dirty, setDirty] = useState(false)
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [mode, setMode] = useState<'contract' | 'code'>('contract')
+  const [codeMap, setCodeMap] = useState<CodeMap | null | undefined>(undefined)
+  const [codePath, setCodePath] = useState('')
+  const [codeBusy, setCodeBusy] = useState(false)
+  const [codeError, setCodeError] = useState<string | null>(null)
 
   const flipTheme = useCallback(() => {
     const next = theme === 'light' ? 'dark' : 'light'
@@ -111,6 +122,56 @@ export default function App() {
       live = false
     }
   }, [currentRoot])
+
+  const codeRoot = useRef<string | null>(null)
+
+  useEffect(() => {
+    codeRoot.current = currentRoot
+    setCodeMap(undefined)
+    setCodePath('')
+    setCodeError(null)
+    setCodeBusy(false)
+  }, [currentRoot])
+
+  useEffect(() => {
+    if (mode !== 'code' || !currentRoot || codeMap !== undefined) return
+    let live = true
+    setCodeBusy(true)
+    window.architect
+      .getCodeMap(currentRoot)
+      .then((m) => {
+        if (!live) return
+        setCodeMap(m)
+        setCodeBusy(false)
+      })
+      .catch((err: unknown) => {
+        if (!live) return
+        setCodeError(errorText(err))
+        setCodeBusy(false)
+      })
+    return () => {
+      live = false
+    }
+  }, [mode, currentRoot, codeMap])
+
+  const scan = useCallback(() => {
+    if (!currentRoot || codeBusy) return
+    const root = currentRoot
+    setCodeBusy(true)
+    setCodeError(null)
+    window.architect
+      .rescan(root)
+      .then((m) => {
+        if (codeRoot.current !== root) return
+        setCodeMap(m)
+        setCodeBusy(false)
+      })
+      .catch((err: unknown) => {
+        if (codeRoot.current !== root) return
+        setCodeError(errorText(err))
+        setCodeBusy(false)
+      })
+  }, [currentRoot, codeBusy])
 
   const refreshEdits = useCallback(async (root: string) => {
     setEdits(await window.architect.edits(root))
@@ -227,6 +288,10 @@ export default function App() {
 
   const shown = draft ? draft.architecture : architecture
 
+  const codeWorld = codeMap && codeMap.folders.some((f) => f.path === codePath) ? codePath : ''
+  const trail = crumbs(currentRoot ? folderName(currentRoot) : 'root', codeWorld)
+  const goUp = useCallback(() => setCodePath(parentOf), [])
+
   const openConnectMcp = useCallback(() => {
     setShowConnectMcp(true)
     setBridge(null)
@@ -284,9 +349,6 @@ export default function App() {
           </ul>
           <button className="sidebar-action" onClick={openConnectMcp}>
             Connect MCP
-          </button>
-          <button className="sidebar-action" onClick={flipTheme}>
-            {theme === 'light' ? 'Dark mode' : 'Light mode'}
           </button>
         </div>
 
@@ -375,10 +437,79 @@ export default function App() {
         {shown ? (
           <>
             <header className="canvas-header">
-              <h2>{shown.title}</h2>
+              <div className="canvas-header-top">
+                <h2>{shown.title}</h2>
+                <div className="mode-toggle">
+                  <button
+                    className={mode === 'contract' ? 'mode active' : 'mode'}
+                    onClick={() => setMode('contract')}
+                  >
+                    Contract
+                  </button>
+                  <button className={mode === 'code' ? 'mode active' : 'mode'} onClick={() => setMode('code')}>
+                    Code
+                  </button>
+                </div>
+              </div>
               {currentRoot && <p className="canvas-path">{currentRoot}</p>}
-              <p>{shown.summary}</p>
+              <p>{mode === 'code' ? 'Every folder, file and function in this project.' : shown.summary}</p>
             </header>
+            {mode === 'code' ? (
+              <>
+                {codeMap && (
+                  <div className="code-bar">
+                    <button className="ghost" onClick={goUp} disabled={codeWorld === ''}>
+                      Back
+                    </button>
+                    <nav className="crumbs">
+                      {trail.map((c, i) => (
+                        <span key={c.path}>
+                          {i > 0 && <span className="crumb-sep">/</span>}
+                          <button
+                            className={c.path === codeWorld ? 'crumb current' : 'crumb'}
+                            onClick={() => setCodePath(c.path)}
+                          >
+                            {c.label}
+                          </button>
+                        </span>
+                      ))}
+                    </nav>
+                    <div className="code-bar-actions">
+                      <button className="primary" onClick={scan} disabled={codeBusy}>
+                        {codeBusy ? 'Scanning…' : 'Rescan'}
+                      </button>
+                    </div>
+                    {codeError && <div className="edit-bar-message error">{codeError}</div>}
+                  </div>
+                )}
+                {codeMap ? (
+                  <CodeCanvas
+                    map={codeMap}
+                    path={codeWorld}
+                    theme={theme}
+                    onEnter={setCodePath}
+                    onUp={goUp}
+                  />
+                ) : (
+                  <div className="empty-state code-blank">
+                    {codeBusy ? (
+                      <p>Scanning the project. This reads every file and can take a while.</p>
+                    ) : codeMap === null ? (
+                      <>
+                        <p>This project has not been scanned yet.</p>
+                        <button className="primary" onClick={scan}>
+                          Scan project
+                        </button>
+                      </>
+                    ) : (
+                      <p>Loading the code map…</p>
+                    )}
+                    {codeError && <p className="code-error">{codeError}</p>}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
             {draft && (
               <div className="edit-bar">
                 <div className="edit-bar-label">
@@ -422,6 +553,8 @@ export default function App() {
               theme={theme}
               onEdit={draft && draft.status === 'draft' ? applyEdit : undefined}
             />
+              </>
+            )}
           </>
         ) : (
           <div className="empty-state">Select a project to open its architecture</div>

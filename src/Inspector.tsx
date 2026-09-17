@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import type { Architecture } from '../shared/types'
+import type { CodeNodeData } from './codemap'
 import { removeComponent, renameComponent, setOwns, setPurpose, type OpResult } from './edit-ops'
 import { statusOf, type NodeData } from './layout'
 
@@ -8,6 +9,55 @@ type InspectorProps = {
   node: NodeData
   onClose: () => void
   onEdit?: (op: (a: Architecture) => OpResult) => void
+}
+
+export function CodeInspector({ node, onClose }: { node: CodeNodeData; onClose: () => void }) {
+  return (
+    <aside className="inspector">
+      <div className="inspector-head">
+        <div className="inspector-title">
+          <span className="inspector-id">{node.name}</span>
+          <span className="inspector-status">{node.kind === 'folder' ? 'folder' : 'file'}</span>
+        </div>
+        <button className="inspector-close" onClick={onClose} aria-label="Close inspector">
+          ×
+        </button>
+      </div>
+
+      <section className="inspector-section">
+        <h3>Path</h3>
+        <p className="inspector-purpose">{node.path === '' ? '/' : node.path}</p>
+      </section>
+
+      {node.kind === 'folder' ? (
+        <section className="inspector-section">
+          <h3>Contents</h3>
+          <p className="inspector-purpose">
+            {node.counts.files} files · {node.counts.functions} functions
+          </p>
+        </section>
+      ) : (
+        <section className="inspector-section">
+          <h3>Functions</h3>
+          {node.functions.length === 0 ? (
+            <p className="inspector-purpose">No functions in this file</p>
+          ) : (
+            <ul className="inspector-fns">
+              {node.functions.map((fn, i) => (
+                <li key={`${i}:${fn.name}`}>
+                  <div className="inspector-fn-head">
+                    <span className="code-fn-name">{fn.name}</span>
+                    <span className="inspector-fn-line">line {fn.line}</span>
+                  </div>
+                  {fn.description !== '' && <p className="inspector-fn-desc">{fn.description}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+    </aside>
+  )
 }
 
 export default function Inspector({ node, onClose, onEdit }: InspectorProps) {

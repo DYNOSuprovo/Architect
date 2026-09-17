@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { Architecture, ArchitectApi, Edit, Pending, Proposal } from '../shared/types'
+import type { Architecture, ArchitectApi, CodeMap, Edit, Pending, Proposal } from '../shared/types'
 import App from './App'
 import './index.css'
 
@@ -109,6 +109,153 @@ function installMock() {
     return edit
   }
 
+  function mockCodeMap(root: string): CodeMap {
+    return {
+      root,
+      scannedAt: Date.now(),
+      folders: [
+        {
+          path: '',
+          folders: ['src', 'electron', 'mcp'],
+          files: [
+            {
+              path: 'index.ts',
+              functions: [{ name: 'main', line: 1, description: 'Boots the process and hands control to the app shell.' }]
+            },
+            { path: 'vite.config.ts', functions: [] }
+          ]
+        },
+        {
+          path: 'src',
+          folders: ['src/workflows', 'src/ui'],
+          files: [
+            {
+              path: 'src/App.tsx',
+              functions: [
+                { name: 'App', line: 25, description: 'Holds every screen level state and wires the sidebar to the canvas.' },
+                { name: 'placeholderId', line: 10, description: 'Picks the next unused component id.' },
+                { name: 'describe', line: 17, description: '' }
+              ]
+            },
+            {
+              path: 'src/layout.ts',
+              functions: [
+                { name: 'findCycleEdges', line: 22, description: 'Walks the edge list backwards to find the path that would close a cycle.' },
+                { name: 'hasCycle', line: 53, description: 'True when adding this edge would close a cycle.' },
+                { name: 'statusOf', line: 57, description: 'The badge word shown on a node.' },
+                { name: 'folderName', line: 63, description: 'Last path segment of a project root.' },
+                { name: 'roleOf', line: 68, description: 'Classifies a component as entry, foundation or middle.' },
+                { name: 'sides', line: 76, description: '' },
+                { name: 'packageBadges', line: 83, description: 'Pending package proposals attached to one component.' },
+                { name: 'build', line: 92, description: 'Turns an architecture plus its pending proposals into nodes and links.' },
+                { name: 'positions', line: 177, description: 'Runs dagre and returns a top left point per node.' },
+                { name: 'anchorTop', line: 186, description: 'Pins entry points to the first rank.' },
+                { name: 'anchorBottom', line: 191, description: 'Pins foundations to the last rank.' }
+              ]
+            },
+            { path: 'src/types.ts', functions: [] }
+          ]
+        },
+        {
+          path: 'src/workflows',
+          folders: [],
+          files: [
+            {
+              path: 'src/workflows/runner.ts',
+              functions: [
+                { name: 'run', line: 8, description: 'Executes one workflow step and persists the result.' },
+                { name: 'retry', line: 31, description: '' },
+                { name: 'cancel', line: 44, description: 'Marks the run cancelled and releases its lock.' },
+                { name: 'resume', line: 58, description: '' },
+                { name: 'status', line: 70, description: 'Current state of a run, cheap enough to poll.' }
+              ]
+            },
+            {
+              path: 'src/workflows/queue.ts',
+              functions: [
+                { name: 'push', line: 4, description: 'Appends a job and wakes a sleeping worker.' },
+                { name: 'drain', line: 19, description: 'Pops jobs until the queue is empty.' }
+              ]
+            }
+          ]
+        },
+        {
+          path: 'src/ui',
+          folders: ['src/ui/panels'],
+          files: [
+            {
+              path: 'src/ui/Button.tsx',
+              functions: [{ name: 'Button', line: 3, description: 'The only button in the app, themed from custom properties.' }]
+            }
+          ]
+        },
+        {
+          path: 'src/ui/panels',
+          folders: [],
+          files: [
+            {
+              path: 'src/ui/panels/Inspector.tsx',
+              functions: [
+                { name: 'Inspector', line: 13, description: 'Side panel for the selected node.' },
+                { name: 'commit', line: 19, description: 'Applies one edit operation and forces a rerender.' },
+                { name: 'blurOnEnter', line: 25, description: '' },
+                { name: 'drop', line: 29, description: 'Confirms, then deletes the component and its edges.' }
+              ]
+            }
+          ]
+        },
+        {
+          path: 'electron',
+          folders: [],
+          files: [
+            {
+              path: 'electron/main.ts',
+              functions: [
+                { name: 'createWindow', line: 12, description: 'Opens the single browser window and loads the renderer.' },
+                { name: 'registerIpc', line: 40, description: 'Binds every renderer channel to a store call.' },
+                { name: 'watchProjects', line: 66, description: 'Reloads an architecture when its file changes on disk.' },
+                { name: 'quit', line: 88, description: '' },
+                { name: 'openProject', line: 95, description: 'Reads one project root and caches its architecture.' },
+                { name: 'scanCode', line: 120, description: 'Walks the repo and asks the model to describe each function.' }
+              ]
+            },
+            {
+              path: 'electron/preload.ts',
+              functions: [
+                { name: 'expose', line: 6, description: 'Publishes the architect API on the window object.' },
+                { name: 'invoke', line: 22, description: '' }
+              ]
+            }
+          ]
+        },
+        {
+          path: 'mcp',
+          folders: [],
+          files: [
+            {
+              path: 'mcp/server.ts',
+              functions: [
+                { name: 'getArchitecture', line: 14, description: 'Returns the current architecture for a working directory.' },
+                { name: 'checkChange', line: 32, description: 'Answers whether one component may depend on another.' },
+                { name: 'proposeChange', line: 51, description: 'Queues a proposal for human approval.' },
+                { name: 'awaitProposal', line: 74, description: 'Blocks until the human approves or rejects.' },
+                { name: 'listEdits', line: 96, description: 'Every draft and handed edit for a project.' },
+                { name: 'getEdit', line: 112, description: 'One edit by id.' },
+                { name: 'connect', line: 130, description: 'Opens the unix socket to the desktop app.' },
+                { name: 'send', line: 148, description: '' },
+                { name: 'main', line: 170, description: 'Starts the stdio transport.' }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+
+  const codeMaps: Record<string, CodeMap> = {
+    '/Users/demo/code/reporter/bot': mockCodeMap('/Users/demo/code/reporter/bot')
+  }
+
   const changeListeners = new Set<(a: Architecture) => void>()
   const pendingListeners = new Set<(p: Pending[]) => void>()
 
@@ -196,6 +343,14 @@ function installMock() {
     async deleteEdit(root, id) {
       const list = editsByRoot[root] ?? []
       list.splice(list.indexOf(findEdit(root, id)), 1)
+    },
+    async getCodeMap(root) {
+      return codeMaps[root] ?? null
+    },
+    async rescan(root) {
+      const scanned = mockCodeMap(root)
+      codeMaps[root] = scanned
+      return scanned
     },
     onChange(fn) {
       changeListeners.add(fn)

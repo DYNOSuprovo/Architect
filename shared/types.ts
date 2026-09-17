@@ -57,6 +57,14 @@ export type Request =
   | { id: string; op: 'list_edits'; cwd: string }
   | { id: string; op: 'get_edit'; cwd: string; editId: string }
 
+export type FunctionEntry = { name: string; line: number; description: string }
+
+export type FileEntry = { path: string; functions: FunctionEntry[] }
+
+export type FolderEntry = { path: string; folders: string[]; files: FileEntry[] }
+
+export type CodeMap = { root: string; scannedAt: number; folders: FolderEntry[] }
+
 export type ArchitectApi = {
   projects(): Promise<{ root: string; title: string }[]>
   open(root: string): Promise<Architecture>
@@ -69,6 +77,8 @@ export type ArchitectApi = {
   updateEdit(root: string, id: string, architecture: Architecture): Promise<Edit>
   handEdit(root: string, id: string): Promise<Edit>
   deleteEdit(root: string, id: string): Promise<void>
+  getCodeMap(root: string): Promise<CodeMap | null>
+  rescan(root: string): Promise<CodeMap>
   onChange(fn: (a: Architecture) => void): void
   onPending(fn: (p: Pending[]) => void): void
   onProjects(fn: (p: { root: string; title: string }[]) => void): void
