@@ -502,11 +502,15 @@ body.resizing {
 
 .node {
   box-sizing: border-box;
-  width: 220px;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
   background: var(--node-bg);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 11px 13px 12px;
+  padding: 9px 12px 10px;
   color: var(--text);
   box-shadow: 0 6px 16px var(--shadow);
 }
@@ -519,12 +523,17 @@ body.resizing {
 }
 
 .node-id {
+  min-width: 0;
   font-size: 13.5px;
   font-weight: 650;
   letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .node-role {
+  flex: none;
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.05em;
@@ -552,42 +561,33 @@ body.resizing {
 }
 
 .node-purpose {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-dim);
-  margin-top: 4px;
-  line-height: 1.4;
+  margin-top: 5px;
+  line-height: 1.25;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+  max-height: 25px;
   overflow: hidden;
-}
-
-.node-owns {
-  font-size: 10px;
-  color: var(--text-dim);
-  font-family: var(--mono);
-  margin-top: 8px;
-  padding-top: 7px;
-  border-top: 1px solid var(--border);
-  opacity: 0.85;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .node-badges {
   display: flex;
-  flex-wrap: wrap;
   gap: 4px;
-  margin-top: 8px;
+  height: 18px;
+  margin-top: 6px;
+  overflow: hidden;
 }
 
 .badge {
   font-size: 10px;
+  line-height: 14px;
   border: 1px dashed var(--accent);
   color: var(--accent);
   border-radius: 4px;
   padding: 1px 6px;
+  white-space: nowrap;
 }
 
 .node-ghost {
@@ -1126,14 +1126,6 @@ body.resizing {
 .code-node.picked {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent), 0 6px 16px var(--shadow);
-}
-
-.code-node {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
-  padding: 9px 12px 10px;
 }
 
 .code-folder .node-id {

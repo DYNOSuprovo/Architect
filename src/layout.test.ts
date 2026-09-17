@@ -4,9 +4,14 @@ import {
   build,
   clampInspectorWidth,
   folderName,
+  heightOf,
   positions,
   roleOf,
   statusOf,
+  NODE_BADGES_H,
+  NODE_BASE_H,
+  NODE_PURPOSE_H,
+  NODE_W,
   INSPECTOR_MAX_W,
   INSPECTOR_MIN_W,
   INSPECTOR_SHARE,
@@ -96,8 +101,8 @@ describe('statusOf', () => {
   })
 })
 
-describe('rank pinning', () => {
-  it('puts every entry at the same height even when their depth differs', () => {
+describe('ranking', () => {
+  it('puts a dependency one rank below its dependent instead of at the deepest rank', () => {
     const a = architecture(['ui', 'api', 'db', 'worker'], [
       ['ui', 'api'],
       ['api', 'db'],
@@ -105,10 +110,11 @@ describe('rank pinning', () => {
     ])
 
     const at = layout(a)
-    expect(at.get('worker')!.y).toBe(at.get('ui')!.y)
+    expect(at.get('worker')!.y).toBe(at.get('api')!.y)
+    expect(at.get('worker')!.y).toBeGreaterThan(at.get('ui')!.y)
   })
 
-  it('puts every foundation at the same height even when their depth differs', () => {
+  it('lets a shallow foundation sit directly under the thing that needs it', () => {
     const a = architecture(['ui', 'api', 'db', 'config'], [
       ['ui', 'api'],
       ['ui', 'config'],
@@ -116,7 +122,23 @@ describe('rank pinning', () => {
     ])
 
     const at = layout(a)
-    expect(at.get('config')!.y).toBe(at.get('db')!.y)
+    expect(at.get('config')!.y).toBe(at.get('api')!.y)
+    expect(at.get('config')!.y).toBeLessThan(at.get('db')!.y)
+  })
+
+  it('never stretches an edge across more than one gap in a plain chain', () => {
+    const a = architecture(['ui', 'api', 'db', 'worker'], [
+      ['ui', 'api'],
+      ['api', 'db'],
+      ['worker', 'db']
+    ])
+
+    const at = layout(a)
+    const rows = [...new Set([...at.values()].map((p) => p.y))].sort((x, y) => x - y)
+    const rank = (id: string) => rows.indexOf(at.get(id)!.y)
+    for (const [from, to] of [['ui', 'api'], ['api', 'db'], ['worker', 'db']] as [string, string][]) {
+      expect(rank(to) - rank(from)).toBe(1)
+    }
   })
 
   it('keeps entries above the components that depend on them', () => {
@@ -155,6 +177,101 @@ describe('rank pinning', () => {
     ])
 
     expect([...layout(a).entries()]).toEqual([...layout(a).entries()])
+  })
+})
+
+describe('heightOf', () => {
+  const data = (over: Partial<NodeData>): NodeData => ({
+    kind: 'component',
+    label: 'a',
+    purpose: '',
+    owns: [],
+    ghost: false,
+    role: 'middle',
+    badges: [],
+    ...over
+  })
+
+  it('is just the head when there is nothing else to draw', () => {
+    expect(heightOf(data({}))).toBe(NODE_BASE_H)
+  })
+
+  it('adds one clamped purpose block however long the purpose is', () => {
+    const short = heightOf(data({ purpose: 'hi' }))
+    expect(short).toBe(NODE_BASE_H + NODE_PURPOSE_H)
+    expect(heightOf(data({ purpose: 'word '.repeat(400) }))).toBe(short)
+  })
+
+  it('adds one badge row however many badges there are', () => {
+    const one = heightOf(data({ badges: ['zod'] }))
+    expect(one).toBe(NODE_BASE_H + NODE_BADGES_H)
+    expect(heightOf(data({ badges: ['zod', 'pg', 'express', 'chokidar'] }))).toBe(one)
+  })
+
+  it('ignores owns, which the card no longer draws', () => {
+    expect(heightOf(data({ owns: ['src/**', 'migrations/*.sql'] }))).toBe(NODE_BASE_H)
+  })
+
+  it('stays under the function card it sits beside', () => {
+    expect(heightOf(data({ purpose: 'p', badges: ['zod'] }))).toBeLessThan(NODE_W)
+  })
+})
+
+describe('reserved geometry', () => {
+  it('reserves exactly the card each node renders', () => {
+    const a: Architecture = {
+      title: 'T',
+      summary: '',
+      forbidden: [],
+      packages: [],
+      components: [
+        { id: 'ui', purpose: 'draws', owns: ['src/ui/**'] },
+        { id: 'db', purpose: '', owns: [] }
+      ],
+      edges: [{ from: 'ui', to: 'db' }]
+    }
+
+    const { nodes, links } = build(a, [
+      {
+        id: 'p1',
+        projectRoot: '/r',
+        proposal: { kind: 'package', name: 'zod', component: 'ui' },
+        rationale: '',
+        createdAt: 0
+      }
+    ])
+    const at = positions(nodes, links)
+    const ui = nodes.find((n) => n.id === 'ui')!
+    const db = nodes.find((n) => n.id === 'db')!
+
+    expect(heightOf(ui.data)).toBe(NODE_BASE_H + NODE_PURPOSE_H + NODE_BADGES_H)
+    expect(heightOf(db.data)).toBe(NODE_BASE_H)
+    expect(at.get('db')!.y - (at.get('ui')!.y + heightOf(ui.data))).toBeGreaterThan(0)
+  })
+
+  it('leaves no node overlapping another', () => {
+    const a = architecture(['ui', 'cli', 'api', 'auth', 'db', 'cache', 'log'], [
+      ['ui', 'api'],
+      ['cli', 'api'],
+      ['ui', 'auth'],
+      ['api', 'db'],
+      ['auth', 'db'],
+      ['api', 'cache'],
+      ['db', 'log'],
+      ['cache', 'log']
+    ])
+
+    const { nodes, links } = build(a, [])
+    const boxes = nodes.map((n) => {
+      const p = positions(nodes, links).get(n.id)!
+      return { x0: p.x, x1: p.x + NODE_W, y0: p.y, y1: p.y + heightOf(n.data) }
+    })
+
+    for (const [i, b] of boxes.entries()) {
+      for (const c of boxes.slice(i + 1)) {
+        expect(b.x1 <= c.x0 || c.x1 <= b.x0 || b.y1 <= c.y0 || c.y1 <= b.y0).toBe(true)
+      }
+    }
   })
 })
 

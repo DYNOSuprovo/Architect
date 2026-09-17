@@ -18,7 +18,7 @@ import '@xyflow/react/dist/style.css'
 import type { Architecture, Pending } from '../shared/types'
 import { addEdge, removeEdge, type OpResult } from './edit-ops'
 import Inspector from './Inspector'
-import { build, positions, sides, statusOf, NODE_W, NODE_H, type NodeData } from './layout'
+import { build, heightOf, positions, statusOf, NODE_W, type NodeData } from './layout'
 
 type CanvasProps = {
   architecture: Architecture
@@ -43,13 +43,6 @@ function marker(color: string) {
   return { type: MarkerType.ArrowClosed, width: 15, height: 15, color }
 }
 
-const HANDLES = [
-  ['t', Position.Top],
-  ['r', Position.Right],
-  ['b', Position.Bottom],
-  ['l', Position.Left]
-] as const
-
 function ComponentNode({ data }: NodeProps<Node<NodeData>>) {
   const classes = ['node', `node-${data.role}`]
   if (data.ghost) classes.push('node-ghost')
@@ -57,24 +50,13 @@ function ComponentNode({ data }: NodeProps<Node<NodeData>>) {
 
   return (
     <div className={classes.join(' ')}>
-      {HANDLES.map(([key, position]) => (
-        <Handle key={`t-${key}`} id={`t-${key}`} type="target" position={position} />
-      ))}
-      {HANDLES.map(([key, position]) => (
-        <Handle key={`s-${key}`} id={`s-${key}`} type="source" position={position} />
-      ))}
+      <Handle type="target" position={Position.Top} />
+      <Handle type="source" position={Position.Bottom} />
       <div className="node-head">
         <span className="node-id">{data.label}</span>
         <span className="node-role">{statusOf(data)}</span>
       </div>
       {data.purpose && <div className="node-purpose">{data.purpose}</div>}
-      {data.owns.length > 0 && (
-        <div className="node-owns">
-          {data.owns.map((glob) => (
-            <div key={glob}>{glob}</div>
-          ))}
-        </div>
-      )}
       {data.badges.length > 0 && (
         <div className="node-badges">
           {data.badges.map((b) => (
@@ -107,16 +89,11 @@ export default function Canvas({ architecture, pending, theme, onEdit }: CanvasP
       draggable: false,
       deletable: editing ? false : undefined,
       position: at.get(n.id) ?? { x: 0, y: 0 },
+      style: { width: NODE_W, height: heightOf(n.data) },
       data: n.data
     }))
 
-    const center = (id: string) => {
-      const p = at.get(id) ?? { x: 0, y: 0 }
-      return { x: p.x + NODE_W / 2, y: p.y + NODE_H / 2 }
-    }
-
     const rfEdges: RFEdge[] = links.map((l) => {
-      const { s, t } = sides(center(l.from), center(l.to))
       const color = l.cyclical ? colors.danger : l.kind === 'real' ? colors.ink : colors.propose
       const dashed = l.kind !== 'real'
       return {
@@ -124,8 +101,6 @@ export default function Canvas({ architecture, pending, theme, onEdit }: CanvasP
         source: l.from,
         target: l.to,
         deletable: editing ? l.kind === 'real' : undefined,
-        sourceHandle: `s-${s}`,
-        targetHandle: `t-${t}`,
         markerEnd: marker(color),
         ...(l.cyclical && l.kind === 'proposed'
           ? {

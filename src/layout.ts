@@ -15,7 +15,15 @@ export type NodeData = {
 }
 
 export const NODE_W = 220
-export const NODE_H = 104
+export const NODE_BASE_H = 37
+export const NODE_PURPOSE_H = 30
+export const NODE_BADGES_H = 24
+
+export function heightOf(data: NodeData): number {
+  const purpose = data.purpose === '' ? 0 : NODE_PURPOSE_H
+  const badges = data.badges.length === 0 ? 0 : NODE_BADGES_H
+  return NODE_BASE_H + purpose + badges
+}
 
 export const INSPECTOR_W = 640
 export const INSPECTOR_MIN_W = 300
@@ -84,13 +92,6 @@ export function roleOf(id: string, edges: Edge[]): Role {
   if (!somethingDependsOnIt) return 'entry'
   if (!dependsOnSomething) return 'foundation'
   return 'middle'
-}
-
-export function sides(a: Pt, b: Pt) {
-  const dx = b.x - a.x
-  const dy = b.y - a.y
-  if (Math.abs(dy) >= Math.abs(dx)) return dy > 0 ? { s: 'b', t: 't' } : { s: 't', t: 'b' }
-  return dx > 0 ? { s: 'r', t: 'l' } : { s: 'l', t: 'r' }
 }
 
 function packageBadges(componentId: string, pending: Pending[]): string[] {
@@ -184,38 +185,22 @@ export function build(architecture: Architecture, pending: Pending[]) {
   return { nodes, links }
 }
 
-const TOP_ANCHOR = '__architect_top'
-const BOTTOM_ANCHOR = '__architect_bottom'
-
 export function positions(nodes: Logical[], links: Link[]): Map<string, Pt> {
   const g = new dagre.graphlib.Graph()
-  g.setGraph({ rankdir: 'TB', ranksep: 96, nodesep: 46, marginx: 40, marginy: 40 })
+  g.setGraph({ rankdir: 'TB', ranksep: 44, nodesep: 30, marginx: 40, marginy: 40 })
   g.setDefaultEdgeLabel(() => ({}))
 
-  for (const n of nodes) g.setNode(n.id, { width: NODE_W, height: NODE_H })
+  for (const n of nodes) g.setNode(n.id, { width: NODE_W, height: heightOf(n.data) })
   for (const l of links) g.setEdge(l.from, l.to)
-
-  // pin-entries
-  const hasIncoming = new Set(links.map((l) => l.to))
-  g.setNode(TOP_ANCHOR, { width: 1, height: 1 })
-  for (const n of nodes) if (!hasIncoming.has(n.id)) g.setEdge(TOP_ANCHOR, n.id, { weight: 1000, minlen: 1 })
-
-  // pin-foundations
-  const hasOutgoing = new Set(links.map((l) => l.from))
-  g.setNode(BOTTOM_ANCHOR, { width: 1, height: 1 })
-  for (const n of nodes) {
-    if (hasIncoming.has(n.id) && !hasOutgoing.has(n.id)) g.setEdge(n.id, BOTTOM_ANCHOR, { weight: 1000, minlen: 1 })
-  }
 
   dagre.layout(g)
 
   const placed = nodes.map((n) => {
     const at = g.node(n.id)
-    return { id: n.id, x: at.x - NODE_W / 2, y: at.y - NODE_H / 2 }
+    return { id: n.id, x: at.x - NODE_W / 2, y: at.y - heightOf(n.data) / 2 }
   })
 
   const minY = Math.min(...placed.map((p) => p.y))
 
   return new Map(placed.map((p) => [p.id, { x: p.x, y: p.y - minY }]))
 }
-
