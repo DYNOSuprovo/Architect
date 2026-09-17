@@ -7,6 +7,7 @@ import {
   PROPOSAL_TIMEOUT_MS,
   SOCKET_PATH,
   type Architecture,
+  type CodeMap,
   type Decision,
   type Edit,
   type EditSummary,
@@ -15,8 +16,68 @@ import {
   type Request,
   type Response,
 } from '../shared/types'
+import { describe, type DescriptionCache } from './describe'
 import { createEdit, deleteEdit, handEdit, listEdits, readEdit, updateEdit } from './edits'
 import { apply, check, parse, serialize } from './graph'
+import { scan } from './scan'
+
+type StoredMap = { map: CodeMap; cache: DescriptionCache }
+
+function mapPath(root: string) {
+  return path.join(root, '.architect', 'map.json')
+}
+
+function isFunctionEntry(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false
+  const fn = value as Record<string, unknown>
+  return typeof fn.name === 'string' && typeof fn.line === 'number' && typeof fn.description === 'string'
+}
+
+function isFileEntry(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false
+  const file = value as Record<string, unknown>
+  return typeof file.path === 'string' && Array.isArray(file.functions) && file.functions.every(isFunctionEntry)
+}
+
+function isFolderEntry(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false
+  const folder = value as Record<string, unknown>
+  if (typeof folder.path !== 'string') return false
+  if (!Array.isArray(folder.folders) || !folder.folders.every((f) => typeof f === 'string')) return false
+  return Array.isArray(folder.files) && folder.files.every(isFileEntry)
+}
+
+function isCodeMap(value: unknown): value is CodeMap {
+  if (typeof value !== 'object' || value === null) return false
+  const map = value as Partial<CodeMap>
+  if (typeof map.root !== 'string' || typeof map.scannedAt !== 'number') return false
+  return Array.isArray(map.folders) && map.folders.every(isFolderEntry)
+}
+
+function readStoredMap(root: string): StoredMap | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(fs.readFileSync(mapPath(root), 'utf8'))
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null
+
+  const { map, cache } = parsed as { map?: unknown; cache?: unknown }
+  if (!isCodeMap(map)) return null
+
+  const entries =
+    typeof cache === 'object' && cache !== null && !Array.isArray(cache)
+      ? Object.entries(cache).filter((e): e is [string, string] => typeof e[1] === 'string')
+      : []
+
+  return { map, cache: Object.fromEntries(entries) }
+}
+
+function writeStoredMap(root: string, stored: StoredMap) {
+  fs.mkdirSync(path.dirname(mapPath(root)), { recursive: true })
+  fs.writeFileSync(mapPath(root), JSON.stringify(stored, null, 2))
+}
 
 type Waiter = { resolve: (decision: Decision) => void; timer: ReturnType<typeof setTimeout> }
 
@@ -398,6 +459,19 @@ export function createDaemon(options: DaemonOptions = {}) {
     deleteEdit: (root: string, id: string): void => {
       loadProject(root)
       deleteEdit(root, id)
+    },
+    codeMap: (root: string): CodeMap | null => readStoredMap(root)?.map ?? null,
+    rescan: async (root: string): Promise<CodeMap> => {
+      const stored = readStoredMap(root)
+      const described = await describe(await scan(root), root, stored?.cache)
+
+      try {
+        writeStoredMap(root, described)
+      } catch (err) {
+        console.error('could not persist code map:', err instanceof Error ? err.message : err)
+      }
+
+      return described.map
     },
     onChange: (fn: (a: Architecture) => void) => {
       changeListener = fn

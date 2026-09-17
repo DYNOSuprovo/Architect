@@ -69,6 +69,8 @@ function wireIpc() {
   )
   ipcMain.handle('architect:hand-edit', (_event, root: string, id: string) => daemon.handEdit(root, id))
   ipcMain.handle('architect:delete-edit', (_event, root: string, id: string) => daemon.deleteEdit(root, id))
+  ipcMain.handle('architect:code-map', (_event, root: string) => daemon.codeMap(root))
+  ipcMain.handle('architect:rescan', (_event, root: string) => daemon.rescan(root))
 }
 
 app.whenReady().then(async () => {

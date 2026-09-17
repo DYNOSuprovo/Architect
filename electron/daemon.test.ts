@@ -575,3 +575,48 @@ describe('edits', () => {
     c.close()
   })
 })
+
+describe('code map storage', () => {
+  const originalKey = process.env.ANTHROPIC_API_KEY
+
+  beforeEach(() => {
+    delete process.env.ANTHROPIC_API_KEY
+  })
+
+  afterEach(() => {
+    if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY
+    else process.env.ANTHROPIC_API_KEY = originalKey
+  })
+
+  it('returns the scanned map even when it cannot be persisted', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
+    fs.writeFileSync(path.join(tmpRoot, '.architect'), 'not a directory')
+    daemon = createDaemon({ socketPath })
+
+    const map = await daemon.rescan(tmpRoot)
+
+    expect(map.root).toBe(tmpRoot)
+    expect(map.folders[0]?.files.map((f) => f.path)).toContain('a.ts')
+    expect(fs.existsSync(path.join(tmpRoot, '.architect', 'map.json'))).toBe(false)
+  })
+
+  it('refuses a stored map whose folders are malformed', async () => {
+    fs.mkdirSync(path.join(tmpRoot, '.architect'), { recursive: true })
+    fs.writeFileSync(
+      path.join(tmpRoot, '.architect', 'map.json'),
+      JSON.stringify({ map: { root: tmpRoot, scannedAt: 1, folders: [{ path: '', folders: [] }] }, cache: {} }),
+    )
+    daemon = createDaemon({ socketPath })
+
+    expect(daemon.codeMap(tmpRoot)).toBeNull()
+  })
+
+  it('reads back a map it wrote', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
+    daemon = createDaemon({ socketPath })
+
+    await daemon.rescan(tmpRoot)
+
+    expect(daemon.codeMap(tmpRoot)?.folders[0]?.files.map((f) => f.path)).toEqual(['a.ts'])
+  })
+})

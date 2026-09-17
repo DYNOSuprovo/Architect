@@ -13,6 +13,8 @@ const architect: ArchitectApi = {
   updateEdit: (root, id, architecture) => ipcRenderer.invoke('architect:update-edit', root, id, architecture),
   handEdit: (root, id) => ipcRenderer.invoke('architect:hand-edit', root, id),
   deleteEdit: (root, id) => ipcRenderer.invoke('architect:delete-edit', root, id),
+  getCodeMap: (root) => ipcRenderer.invoke('architect:code-map', root),
+  rescan: (root) => ipcRenderer.invoke('architect:rescan', root),
   onChange: (fn: (a: Architecture) => void) => {
     ipcRenderer.on('architect:change', (_event, architecture: Architecture) => fn(architecture))
   },
