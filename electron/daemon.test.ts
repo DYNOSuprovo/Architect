@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
@@ -618,5 +618,151 @@ describe('code map storage', () => {
     await daemon.rescan(tmpRoot)
 
     expect(daemon.codeMap(tmpRoot)?.folders[0]?.files.map((f) => f.path)).toEqual(['a.ts'])
+  })
+})
+
+describe('code map migration', () => {
+  const originalKey = process.env.ANTHROPIC_API_KEY
+
+  beforeEach(() => {
+    delete process.env.ANTHROPIC_API_KEY
+  })
+
+  afterEach(() => {
+    if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY
+    else process.env.ANTHROPIC_API_KEY = originalKey
+  })
+
+  function writeOldMap(cache: Record<string, string>) {
+    fs.mkdirSync(path.join(tmpRoot, '.architect'), { recursive: true })
+    fs.writeFileSync(
+      path.join(tmpRoot, '.architect', 'map.json'),
+      JSON.stringify({
+        map: {
+          root: tmpRoot,
+          scannedAt: 1,
+          folders: [
+            { path: '', folders: [], files: [{ path: 'a.ts', functions: [{ name: 'a', line: 1, description: 'old' }] }] },
+          ],
+        },
+        cache,
+      }),
+    )
+  }
+
+  it('treats a map stored before the call graph as never scanned', async () => {
+    writeOldMap({})
+    daemon = createDaemon({ socketPath })
+
+    expect(daemon.codeMap(tmpRoot)).toBeNull()
+  })
+
+  it('keeps description cache hits across the migration', async () => {
+    const source = 'export function a() {}\n'
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), source)
+    const hash = createHash('sha256').update(`a.ts\0a\0${source}`).digest('hex')
+    writeOldMap({ [hash]: 'already described' })
+    daemon = createDaemon({ socketPath })
+
+    const map = await daemon.rescan(tmpRoot)
+
+    expect(map.folders[0]?.files[0]?.functions[0]?.description).toBe('already described')
+  })
+
+  it('refuses a stored map whose calls are not indices', async () => {
+    fs.mkdirSync(path.join(tmpRoot, '.architect'), { recursive: true })
+    fs.writeFileSync(
+      path.join(tmpRoot, '.architect', 'map.json'),
+      JSON.stringify({
+        map: {
+          root: tmpRoot,
+          scannedAt: 1,
+          folders: [
+            { path: '', folders: [], files: [{ path: 'a.ts', functions: [{ name: 'a', line: 1, endLine: 1, description: '', calls: ['b'] }] }] },
+          ],
+        },
+        cache: {},
+      }),
+    )
+    daemon = createDaemon({ socketPath })
+
+    expect(daemon.codeMap(tmpRoot)).toBeNull()
+  })
+})
+
+describe('readSource', () => {
+  beforeEach(async () => {
+    writeArchitect(tmpRoot, fixture(component('api')))
+    daemon = createDaemon({ socketPath })
+    await daemon.open(tmpRoot)
+  })
+
+  it('refuses a root that is not an open project', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'one\ntwo\n')
+    const parent = path.dirname(tmpRoot)
+    const inParent = path.join(tmpRoot, '..', `outside-${randomUUID()}.ts`)
+    fs.writeFileSync(inParent, 'secret\n')
+
+    try {
+      expect(await daemon.readSource(parent, path.basename(inParent), 1, 1)).toBe('')
+      expect(await daemon.readSource(parent, `${path.basename(tmpRoot)}/a.ts`, 1, 1)).toBe('')
+      expect(await daemon.readSource(path.parse(tmpRoot).root, path.relative(path.parse(tmpRoot).root, inParent), 1, 1)).toBe('')
+      expect(await daemon.readSource(path.join(tmpRoot, 'sub'), 'a.ts', 1, 1)).toBe('')
+    } finally {
+      fs.rmSync(inParent, { force: true })
+    }
+  })
+
+  it('returns the requested inclusive line range', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'one\ntwo\nthree\nfour\n')
+
+    expect(await daemon.readSource(tmpRoot, 'a.ts', 2, 3)).toBe('two\nthree')
+  })
+
+  it('refuses a path that escapes the root', async () => {
+    const outside = path.join(tmpRoot, '..', `escape-${randomUUID()}.ts`)
+    fs.writeFileSync(outside, 'secret\n')
+
+    try {
+      expect(await daemon.readSource(tmpRoot, `../${path.basename(outside)}`, 1, 1)).toBe('')
+      expect(await daemon.readSource(tmpRoot, outside, 1, 1)).toBe('')
+    } finally {
+      fs.rmSync(outside, { force: true })
+    }
+  })
+
+  it('refuses a symlink that leaves the root', async () => {
+    const outside = path.join(tmpRoot, '..', `linked-${randomUUID()}.ts`)
+    fs.writeFileSync(outside, 'secret\n')
+    fs.symlinkSync(outside, path.join(tmpRoot, 'link.ts'))
+
+    try {
+      expect(await daemon.readSource(tmpRoot, 'link.ts', 1, 1)).toBe('')
+    } finally {
+      fs.rmSync(outside, { force: true })
+    }
+  })
+
+  it('returns empty for a missing file', async () => {
+    expect(await daemon.readSource(tmpRoot, 'nope.ts', 1, 5)).toBe('')
+  })
+
+  it('clamps a range that runs past the end of the file', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'one\ntwo\n')
+
+    expect(await daemon.readSource(tmpRoot, 'a.ts', 2, 900)).toBe('two\n')
+    expect(await daemon.readSource(tmpRoot, 'a.ts', 0, 1)).toBe('one')
+    expect(await daemon.readSource(tmpRoot, 'a.ts', 40, 90)).toBe('')
+    expect(await daemon.readSource(tmpRoot, 'a.ts', Number.NaN, 2)).toBe('')
+  })
+
+  it('caps the returned span', async () => {
+    const lines = Array.from({ length: 900 }, (_, n) => `line${n + 1}`)
+    fs.writeFileSync(path.join(tmpRoot, 'big.ts'), lines.join('\n'))
+
+    const span = await daemon.readSource(tmpRoot, 'big.ts', 1, 900)
+
+    expect(span.split('\n')).toHaveLength(400)
+    expect(span.split('\n').at(-1)).toBe('line400')
   })
 })

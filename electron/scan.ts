@@ -88,6 +88,145 @@ function ownerFor(node: ts.Node, owner: string): string {
   return ''
 }
 
+function calleeName(expression: ts.Expression, self: string): string | undefined {
+  if (ts.isIdentifier(expression)) return expression.text
+  if (expression.kind === ts.SyntaxKind.ThisKeyword) return self === '' ? undefined : self
+  if (ts.isParenthesizedExpression(expression)) return calleeName(expression.expression, self)
+
+  if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.name)) {
+    const base = calleeName(expression.expression, self)
+    return base === undefined ? undefined : `${base}.${expression.name.text}`
+  }
+
+  return undefined
+}
+
+type Found = { entry: FunctionEntry; node: ts.Node; owner: string }
+
+function scopeOf(node: ts.Node): ts.Node | undefined {
+  let at: ts.Node | undefined = node.parent
+  while (at !== undefined && !ts.isFunctionLike(at) && !ts.isSourceFile(at)) at = at.parent
+  return at
+}
+
+function isOverloadSignature(node: ts.Node): boolean {
+  return (
+    (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isConstructorDeclaration(node)) &&
+    node.body === undefined
+  )
+}
+
+function importedNames(source: ts.SourceFile): Set<string> {
+  const names = new Set<string>()
+
+  for (const statement of source.statements) {
+    if (ts.isImportEqualsDeclaration(statement)) names.add(statement.name.text)
+    if (!ts.isImportDeclaration(statement) || statement.importClause === undefined) continue
+
+    const clause = statement.importClause
+    if (clause.name) names.add(clause.name.text)
+
+    const bindings = clause.namedBindings
+    if (bindings && ts.isNamespaceImport(bindings)) names.add(bindings.name.text)
+    if (bindings && ts.isNamedImports(bindings)) for (const element of bindings.elements) names.add(element.name.text)
+  }
+
+  return names
+}
+
+function boundNames(name: ts.BindingName, into: Set<string>): void {
+  if (ts.isIdentifier(name)) return void into.add(name.text)
+  for (const element of name.elements) {
+    if (ts.isBindingElement(element)) boundNames(element.name, into)
+  }
+}
+
+function shadowsOf(source: ts.SourceFile): Map<ts.Node, Set<string>> {
+  const byScope = new Map<ts.Node, Set<string>>()
+
+  const at = (node: ts.Node): Set<string> | undefined => {
+    const scope = ts.isParameter(node) ? node.parent : scopeOf(node)
+    if (scope === undefined) return undefined
+    const names = byScope.get(scope) ?? new Set<string>()
+    byScope.set(scope, names)
+    return names
+  }
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isParameter(node) || ts.isVariableDeclaration(node)) boundNames(node.name, at(node) ?? new Set())
+    if (ts.isCatchClause(node) && node.variableDeclaration) {
+      boundNames(node.variableDeclaration.name, at(node.variableDeclaration) ?? new Set())
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  visit(source)
+  return byScope
+}
+
+function bindingsOf(found: Found[]): Map<ts.Node, Map<string, number>> {
+  const byScope = new Map<ts.Node, Map<string, number>>()
+
+  for (const [i, f] of found.entries()) {
+    const scope = scopeOf(f.node)
+    if (scope === undefined) continue
+
+    const names = byScope.get(scope) ?? new Map<string, number>()
+    byScope.set(scope, names)
+
+    const prev = names.get(f.entry.name)
+    const previous = prev === undefined ? undefined : found[prev]
+    if (previous === undefined || !isOverloadSignature(f.node) || isOverloadSignature(previous.node)) {
+      names.set(f.entry.name, i)
+    }
+  }
+
+  return byScope
+}
+
+function resolveCall(
+  name: string,
+  at: ts.Node,
+  byScope: Map<ts.Node, Map<string, number>>,
+  shadows: Map<ts.Node, Set<string>>,
+  imported: Set<string>,
+): number | undefined {
+  const root = name.split('.')[0] ?? name
+
+  for (let scope = scopeOf(at); scope !== undefined; scope = scopeOf(scope)) {
+    const hit = byScope.get(scope)?.get(name)
+    if (hit !== undefined) return hit
+    if (shadows.get(scope)?.has(root)) return undefined
+    if (ts.isSourceFile(scope) && imported.has(root)) return undefined
+  }
+
+  return undefined
+}
+
+function callsIn(
+  node: ts.Node,
+  self: string,
+  nested: Set<ts.Node>,
+  resolve: (name: string, at: ts.Node) => number | undefined,
+): number[] {
+  const found = new Set<number>()
+
+  const visit = (child: ts.Node): void => {
+    if (child !== node && nested.has(child)) return
+
+    if (ts.isCallExpression(child)) {
+      const name = calleeName(child.expression, self)
+      const target = name === undefined ? undefined : resolve(name, child)
+      if (target !== undefined) found.add(target)
+    }
+
+    ts.forEachChild(child, visit)
+  }
+
+  visit(node)
+  return [...found]
+}
+
 function functionsIn(source: string, file: string): FunctionEntry[] {
   const lower = file.toLowerCase()
   if (lower.endsWith('.d.ts') || lower.endsWith('.d.mts') || lower.endsWith('.d.cts')) return []
@@ -95,16 +234,16 @@ function functionsIn(source: string, file: string): FunctionEntry[] {
   const kind = SCRIPT_KINDS.get(path.extname(lower))
   if (kind === undefined) return []
 
-  const found: FunctionEntry[] = []
-
   try {
     const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, kind)
+    const found: Found[] = []
 
     const visit = (node: ts.Node, owner: string): void => {
       const name = declaredName(node, owner)
       if (name !== undefined) {
         const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
-        found.push({ name, line, description: '' })
+        const endLine = sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1
+        found.push({ entry: { name, line, endLine, description: '', calls: [] }, node, owner })
       }
 
       const next = ownerFor(node, owner)
@@ -112,11 +251,27 @@ function functionsIn(source: string, file: string): FunctionEntry[] {
     }
 
     ts.forEachChild(sourceFile, (child) => visit(child, ''))
+
+    const nested = new Set(found.map((f) => f.node))
+    const byScope = bindingsOf(found)
+    const shadows = shadowsOf(sourceFile)
+    const imported = importedNames(sourceFile)
+    const calls = found.map((f) =>
+      callsIn(f.node, f.owner, nested, (name, at) => resolveCall(name, at, byScope, shadows, imported)),
+    )
+
+    const order = found
+      .map((f, i) => ({ f, i }))
+      .sort((a, b) => a.f.entry.line - b.f.entry.line || a.f.entry.name.localeCompare(b.f.entry.name))
+    const rank = new Map(order.map(({ i }, to) => [i, to]))
+
+    return order.map(({ f, i }) => ({
+      ...f.entry,
+      calls: (calls[i] ?? []).flatMap((c) => (rank.has(c) ? [rank.get(c) as number] : [])).sort((a, b) => a - b),
+    }))
   } catch {
     return []
   }
-
-  return found.sort((a, b) => a.line - b.line || a.name.localeCompare(b.name))
 }
 
 function readText(file: string): string | undefined {

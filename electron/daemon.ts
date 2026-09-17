@@ -21,7 +21,7 @@ import { createEdit, deleteEdit, handEdit, listEdits, readEdit, updateEdit } fro
 import { apply, check, parse, serialize } from './graph'
 import { scan } from './scan'
 
-type StoredMap = { map: CodeMap; cache: DescriptionCache }
+const MAP_VERSION = 2
 
 function mapPath(root: string) {
   return path.join(root, '.architect', 'map.json')
@@ -30,6 +30,8 @@ function mapPath(root: string) {
 function isFunctionEntry(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false
   const fn = value as Record<string, unknown>
+  if (!Array.isArray(fn.calls) || !fn.calls.every((c) => Number.isInteger(c))) return false
+  if (typeof fn.endLine !== 'number') return false
   return typeof fn.name === 'string' && typeof fn.line === 'number' && typeof fn.description === 'string'
 }
 
@@ -54,7 +56,7 @@ function isCodeMap(value: unknown): value is CodeMap {
   return Array.isArray(map.folders) && map.folders.every(isFolderEntry)
 }
 
-function readStoredMap(root: string): StoredMap | null {
+function readStoredMap(root: string): { map: CodeMap | null; cache: DescriptionCache } | null {
   let parsed: unknown
   try {
     parsed = JSON.parse(fs.readFileSync(mapPath(root), 'utf8'))
@@ -63,21 +65,24 @@ function readStoredMap(root: string): StoredMap | null {
   }
   if (typeof parsed !== 'object' || parsed === null) return null
 
-  const { map, cache } = parsed as { map?: unknown; cache?: unknown }
-  if (!isCodeMap(map)) return null
+  const { version, map, cache } = parsed as { version?: unknown; map?: unknown; cache?: unknown }
 
   const entries =
     typeof cache === 'object' && cache !== null && !Array.isArray(cache)
       ? Object.entries(cache).filter((e): e is [string, string] => typeof e[1] === 'string')
       : []
 
-  return { map, cache: Object.fromEntries(entries) }
+  const current = version === MAP_VERSION && isCodeMap(map) ? map : null
+
+  return { map: current, cache: Object.fromEntries(entries) }
 }
 
-function writeStoredMap(root: string, stored: StoredMap) {
+function writeStoredMap(root: string, stored: { map: CodeMap; cache: DescriptionCache }) {
   fs.mkdirSync(path.dirname(mapPath(root)), { recursive: true })
-  fs.writeFileSync(mapPath(root), JSON.stringify(stored, null, 2))
+  fs.writeFileSync(mapPath(root), JSON.stringify({ version: MAP_VERSION, ...stored }, null, 2))
 }
+
+const MAX_SOURCE_LINES = 400
 
 type Waiter = { resolve: (decision: Decision) => void; timer: ReturnType<typeof setTimeout> }
 
@@ -103,6 +108,35 @@ export function createDaemon(options: DaemonOptions = {}) {
   let pendingListener: ((p: Pending[]) => void) | null = null
   let projectsListener: ((p: { root: string; title: string }[]) => void) | null = null
   let server: net.Server | null = null
+
+  async function readSource(root: string, file: string, from: number, to: number): Promise<string> {
+    if (!projects.has(root)) return ''
+    if (!Number.isFinite(from) || !Number.isFinite(to)) return ''
+
+    let base: string
+    let target: string
+    try {
+      base = await fs.promises.realpath(root)
+      target = await fs.promises.realpath(path.resolve(base, file))
+    } catch {
+      return ''
+    }
+
+    if (target !== base && !target.startsWith(base + path.sep)) return ''
+
+    let lines: string[]
+    try {
+      lines = (await fs.promises.readFile(target, 'utf8')).split('\n')
+    } catch {
+      return ''
+    }
+
+    const start = Math.max(1, Math.floor(from))
+    const end = Math.min(lines.length, Math.floor(to), start + MAX_SOURCE_LINES - 1)
+    if (end < start) return ''
+
+    return lines.slice(start - 1, end).join('\n')
+  }
 
   function architectMdPath(root: string) {
     return path.join(root, 'architect.md')
@@ -461,6 +495,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       deleteEdit(root, id)
     },
     codeMap: (root: string): CodeMap | null => readStoredMap(root)?.map ?? null,
+    readSource,
     rescan: async (root: string): Promise<CodeMap> => {
       const stored = readStoredMap(root)
       const described = await describe(await scan(root), root, stored?.cache)

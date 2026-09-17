@@ -57,7 +57,7 @@ export type Request =
   | { id: string; op: 'list_edits'; cwd: string }
   | { id: string; op: 'get_edit'; cwd: string; editId: string }
 
-export type FunctionEntry = { name: string; line: number; description: string }
+export type FunctionEntry = { name: string; line: number; endLine: number; description: string; calls: number[] }
 
 export type FileEntry = { path: string; functions: FunctionEntry[] }
 
@@ -79,6 +79,7 @@ export type ArchitectApi = {
   deleteEdit(root: string, id: string): Promise<void>
   getCodeMap(root: string): Promise<CodeMap | null>
   rescan(root: string): Promise<CodeMap>
+  readSource(root: string, file: string, from: number, to: number): Promise<string>
   onChange(fn: (a: Architecture) => void): void
   onPending(fn: (p: Pending[]) => void): void
   onProjects(fn: (p: { root: string; title: string }[]) => void): void

@@ -26,7 +26,7 @@ function map(): CodeMap {
       {
         path: '',
         folders: ['src'],
-        files: [{ path: 'a.ts', functions: [{ name: 'alpha', line: 1, description: '' }] }],
+        files: [{ path: 'a.ts', functions: [{ name: 'alpha', line: 1, endLine: 1, description: '', calls: [] }] }],
       },
       {
         path: 'src',
@@ -35,8 +35,8 @@ function map(): CodeMap {
           {
             path: 'src/b.ts',
             functions: [
-              { name: 'beta', line: 1, description: '' },
-              { name: 'gamma', line: 5, description: '' },
+              { name: 'beta', line: 1, endLine: 1, description: '', calls: [] },
+              { name: 'gamma', line: 5, endLine: 5, description: '', calls: [] },
             ],
           },
         ],
@@ -193,8 +193,8 @@ suite('describe identifies each function', () => {
             {
               path: 'pair.ts',
               functions: [
-                { name: 'handlers.onOpen', line: 1, description: '' },
-                { name: 'handlers.onClose', line: 1, description: '' },
+                { name: 'handlers.onOpen', line: 1, endLine: 1, description: '', calls: [] },
+                { name: 'handlers.onClose', line: 1, endLine: 1, description: '', calls: [] },
               ],
             },
           ],
@@ -246,7 +246,7 @@ suite('describe batches and caches', () => {
           files: [
             {
               path: 'big.ts',
-              functions: lines.map((_, n) => ({ name: `f${n}`, line: n + 1, description: '' })),
+              functions: lines.map((_, n) => ({ name: `f${n}`, line: n + 1, endLine: n + 1, description: '', calls: [] })),
             },
           ],
         },
