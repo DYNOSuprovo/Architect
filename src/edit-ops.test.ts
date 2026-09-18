@@ -280,3 +280,61 @@ describe('round trip through graph.ts', () => {
     expect(parse(serialize(owned))).toEqual(owned)
   })
 })
+
+describe('selection follows an edit', () => {
+  const selectable = (a: Architecture, id: string) => a.components.some((c) => c.id === id)
+
+  it('lands on exactly the id the inspector will select', () => {
+    const typed = '  cache  '
+    const next = typed.trim()
+    const result = renameComponent(base(), 'api', next)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(selectable(result.architecture, next)).toBe(true)
+  })
+
+  it('leaves the old id selectable when the rename collides', () => {
+    const result = renameComponent(base(), 'api', 'db')
+    expect(result.ok).toBe(false)
+    expect(selectable(base(), 'api')).toBe(true)
+  })
+
+  it('leaves the old id selectable when the rename is empty', () => {
+    const result = renameComponent(base(), 'api', '   ')
+    expect(result.ok).toBe(false)
+    expect(selectable(base(), 'api')).toBe(true)
+  })
+
+  it('keeps edges pointing at the renamed component', () => {
+    const result = renameComponent(base(), 'api', 'gateway')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.architecture.edges).toEqual([
+      { from: 'ui', to: 'gateway' },
+      { from: 'gateway', to: 'db' }
+    ])
+    expect(result.architecture.forbidden[0]).toMatchObject({ from: 'ui', to: 'db' })
+  })
+
+  it('adds a component under a free placeholder id', () => {
+    const taken = { ...base(), components: [...base().components, { id: 'component1', purpose: '', owns: [] }] }
+    const free = (a: Architecture) => {
+      let n = 1
+      while (a.components.some((c) => c.id === `component${n}`)) n++
+      return `component${n}`
+    }
+    const id = free(taken)
+    expect(id).toBe('component2')
+    const result = addComponent(taken, id)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(selectable(result.architecture, id)).toBe(true)
+  })
+
+  it('drops the selected id when the component is removed', () => {
+    const result = removeComponent(base(), 'api')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(selectable(result.architecture, 'api')).toBe(false)
+  })
+})
