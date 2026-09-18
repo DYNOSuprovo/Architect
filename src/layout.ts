@@ -204,3 +204,24 @@ export function positions(nodes: Logical[], links: Link[]): Map<string, Pt> {
 
   return new Map(placed.map((p) => [p.id, { x: p.x, y: p.y - minY }]))
 }
+
+export const HANDLE_IN = 'in'
+export const HANDLE_OUT = 'out'
+
+export function dependency(link: {
+  source: string
+  target: string
+  sourceHandle?: string | null
+  targetHandle?: string | null
+}): { from: string; to: string } | null {
+  const ends = [
+    { id: link.source, handle: link.sourceHandle },
+    { id: link.target, handle: link.targetHandle }
+  ]
+
+  const out = ends.find((e) => e.handle === HANDLE_OUT)
+  const into = ends.find((e) => e.handle === HANDLE_IN)
+  if (!out || !into) return null
+
+  return { from: out.id, to: into.id }
+}

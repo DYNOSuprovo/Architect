@@ -107,7 +107,8 @@ function Grip({ onGrab }: { onGrab: (e: React.PointerEvent<HTMLDivElement>) => v
 type InspectorProps = {
   node: NodeData
   onClose: () => void
-  onEdit?: (op: (a: Architecture) => OpResult) => void
+  onSelect: (id: string | null) => void
+  onEdit?: (op: (a: Architecture) => OpResult) => boolean
 }
 
 const KINDS = { folder: 'folder', codefile: 'file', codefn: 'function' } as const
@@ -223,18 +224,14 @@ export function CodeInspector({
   )
 }
 
-export default function Inspector({ node, onClose, onEdit }: InspectorProps) {
+export default function Inspector({ node, onClose, onSelect, onEdit }: InspectorProps) {
   const [pass, setPass] = useState(0)
   const { panel, width, grab } = useWidth()
 
   const edit = node.kind === 'component' && !node.ghost ? onEdit : undefined
   const owned = node.owns.join('\n')
 
-  const commit = (op: (a: Architecture) => OpResult) => {
-    if (!edit) return
-    edit(op)
-    setPass((p) => p + 1)
-  }
+  const commit = (op: (a: Architecture) => OpResult) => (edit ? edit(op) : false)
 
   const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') e.currentTarget.blur()
@@ -242,7 +239,7 @@ export default function Inspector({ node, onClose, onEdit }: InspectorProps) {
 
   const drop = () => {
     if (!confirm(`Delete "${node.label}" and every edge touching it?`)) return
-    commit((a) => removeComponent(a, node.label))
+    if (commit((a) => removeComponent(a, node.label))) onSelect(null)
   }
 
   return (
@@ -265,14 +262,17 @@ export default function Inspector({ node, onClose, onEdit }: InspectorProps) {
               <label htmlFor="inspector-id-input">Component</label>
               <input
                 id="inspector-id-input"
-                key={`id-${node.label}-${pass}`}
+                key={`id-${node.label}`}
                 className="inspector-input"
                 defaultValue={node.label}
                 onKeyDown={blurOnEnter}
                 onBlur={(e) => {
-                  const value = e.target.value
-                  if (value === node.label) return
-                  commit((a) => renameComponent(a, node.label, value))
+                  const next = e.target.value.trim()
+                  if (next !== node.label && commit((a) => renameComponent(a, node.label, next))) {
+                    onSelect(next)
+                    return
+                  }
+                  e.target.value = node.label
                 }}
               />
             </div>
@@ -281,14 +281,14 @@ export default function Inspector({ node, onClose, onEdit }: InspectorProps) {
               <label htmlFor="inspector-purpose-input">Purpose</label>
               <input
                 id="inspector-purpose-input"
-                key={`purpose-${node.label}-${node.purpose}-${pass}`}
+                key={`purpose-${node.purpose}`}
                 className="inspector-input"
                 defaultValue={node.purpose}
                 onKeyDown={blurOnEnter}
                 onBlur={(e) => {
-                  const value = e.target.value
-                  if (value === node.purpose) return
-                  commit((a) => setPurpose(a, node.label, value))
+                  const next = e.target.value.trim()
+                  if (next !== node.purpose && commit((a) => setPurpose(a, node.label, next))) return
+                  e.target.value = node.purpose
                 }}
               />
             </div>
@@ -297,7 +297,7 @@ export default function Inspector({ node, onClose, onEdit }: InspectorProps) {
               <label htmlFor="inspector-owns-input">Owns</label>
               <textarea
                 id="inspector-owns-input"
-                key={`owns-${node.label}-${owned}-${pass}`}
+                key={`owns-${owned}-${pass}`}
                 className="inspector-textarea"
                 rows={4}
                 defaultValue={owned}
@@ -305,6 +305,7 @@ export default function Inspector({ node, onClose, onEdit }: InspectorProps) {
                   const value = e.target.value
                   if (value === owned) return
                   commit((a) => setOwns(a, node.label, value.split('\n')))
+                  setPass((p) => p + 1)
                 }}
               />
             </div>

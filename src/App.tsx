@@ -41,6 +41,7 @@ export default function App() {
   const [theme, setTheme] = useState(() => document.documentElement.dataset.theme ?? 'dark')
   const [edits, setEdits] = useState<EditSummary[]>([])
   const [draft, setDraft] = useState<Edit | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -173,6 +174,10 @@ export default function App() {
       })
   }, [currentRoot, codeBusy])
 
+  useEffect(() => {
+    setSelectedId(null)
+  }, [currentRoot, mode, draft?.id, draft?.status])
+
   const refreshEdits = useCallback(async (root: string) => {
     setEdits(await window.architect.edits(root))
   }, [])
@@ -203,18 +208,28 @@ export default function App() {
 
   const applyEdit = useCallback(
     (op: (a: Architecture) => OpResult) => {
-      if (!draft || draft.status === 'handed') return
+      if (!draft || draft.status === 'handed') return false
       const result = op(draft.architecture)
       if (!result.ok) {
         setMessage({ text: result.error, error: true })
-        return
+        return false
       }
+
+      const kept = result.architecture.components
       setDraft({ ...draft, architecture: result.architecture })
+      setSelectedId((id) => (id !== null && kept.some((c) => c.id === id) ? id : null))
       setDirty(true)
       setMessage(null)
+      return true
     },
     [draft]
   )
+
+  const addAndSelect = useCallback(() => {
+    if (!draft) return
+    const id = placeholderId(draft.architecture)
+    if (applyEdit((a) => addComponent(a, id))) setSelectedId(id)
+  }, [draft, applyEdit])
 
   const saveEdit = useCallback(() => {
     if (!currentRoot || !draft || draft.status === 'handed' || busy) return
@@ -521,7 +536,7 @@ export default function App() {
                     <>
                       <button
                         className="ghost"
-                        onClick={() => applyEdit((a) => addComponent(a, placeholderId(a)))}
+                        onClick={addAndSelect}
                         disabled={busy}
                       >
                         Add component
@@ -551,6 +566,8 @@ export default function App() {
               architecture={shown}
               pending={draft ? [] : projectPending}
               theme={theme}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
               onEdit={draft && draft.status === 'draft' ? applyEdit : undefined}
             />
               </>

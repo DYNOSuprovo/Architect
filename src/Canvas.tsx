@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 
 import {
   ReactFlow,
@@ -8,6 +8,8 @@ import {
   MarkerType,
   Handle,
   Position,
+  useReactFlow,
+  useStore,
   type Connection,
   type Node,
   type OnBeforeDelete,
@@ -18,13 +20,42 @@ import '@xyflow/react/dist/style.css'
 import type { Architecture, Pending } from '../shared/types'
 import { addEdge, removeEdge, type OpResult } from './edit-ops'
 import Inspector from './Inspector'
-import { build, heightOf, positions, statusOf, NODE_W, type NodeData } from './layout'
+import {
+  build,
+  dependency,
+  heightOf,
+  positions,
+  statusOf,
+  HANDLE_IN,
+  HANDLE_OUT,
+  NODE_W,
+  type NodeData
+} from './layout'
 
 type CanvasProps = {
   architecture: Architecture
   pending: Pending[]
   theme: string
-  onEdit?: (op: (a: Architecture) => OpResult) => void
+  selectedId: string | null
+  onSelect: (id: string | null) => void
+  onEdit?: (op: (a: Architecture) => OpResult) => boolean
+}
+
+const FIT = { padding: 0.14 }
+
+function Reveal({ count }: { count: number }) {
+  const flow = useReactFlow()
+  const width = useStore((s) => s.width)
+  const seen = useRef({ count, width })
+
+  useEffect(() => {
+    const grew = count > seen.current.count
+    const resized = width !== seen.current.width
+    seen.current = { count, width }
+    if (grew || resized) void flow.fitView({ ...FIT, duration: grew ? 220 : 0 })
+  }, [count, width, flow])
+
+  return null
 }
 
 function palette() {
@@ -50,8 +81,8 @@ function ComponentNode({ data }: NodeProps<Node<NodeData>>) {
 
   return (
     <div className={classes.join(' ')}>
-      <Handle type="target" position={Position.Top} />
-      <Handle type="source" position={Position.Bottom} />
+      <Handle type="target" position={Position.Top} id={HANDLE_IN} />
+      <Handle type="source" position={Position.Bottom} id={HANDLE_OUT} />
       <div className="node-head">
         <span className="node-id">{data.label}</span>
         <span className="node-role">{statusOf(data)}</span>
@@ -72,9 +103,7 @@ const nodeTypes = { component: ComponentNode }
 
 const DELETE_KEYS = ['Delete', 'Backspace']
 
-export default function Canvas({ architecture, pending, theme, onEdit }: CanvasProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-
+export default function Canvas({ architecture, pending, theme, selectedId, onSelect, onEdit }: CanvasProps) {
   const editing = onEdit !== undefined
 
   const colors = useMemo(() => palette(), [theme])
@@ -131,15 +160,16 @@ export default function Canvas({ architecture, pending, theme, onEdit }: CanvasP
 
   const selected = nodes.find((n) => n.id === selectedId)?.data ?? null
 
-  const close = useCallback(() => setSelectedId(null), [])
+  const close = useCallback(() => onSelect(null), [onSelect])
 
   const connect = useCallback(
     (connection: Connection) => {
       if (!onEdit) return
-      const ids = new Set(architecture.components.map((c) => c.id))
-      const { source, target } = connection
-      if (!ids.has(source) || !ids.has(target)) return
-      onEdit((a) => addEdge(a, source, target))
+      const link = dependency(connection)
+      if (!link) return
+      const known = new Set(architecture.components.map((c) => c.id))
+      if (!known.has(link.from) || !known.has(link.to)) return
+      onEdit((a) => addEdge(a, link.from, link.to))
     },
     [onEdit, architecture]
   )
@@ -167,10 +197,10 @@ export default function Canvas({ architecture, pending, theme, onEdit }: CanvasP
 
   useEffect(() => {
     if (!selected) return
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSelectedId(null)
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onSelect(null)
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selected])
+  }, [selected, onSelect])
 
   return (
     <div className={editing ? 'canvas-stage canvas-editing' : 'canvas-stage'}>
@@ -186,16 +216,17 @@ export default function Canvas({ architecture, pending, theme, onEdit }: CanvasP
         onConnect={editing ? connect : undefined}
         onEdgesDelete={editing ? disconnect : undefined}
         fitView
-        fitViewOptions={{ padding: 0.14 }}
+        fitViewOptions={FIT}
         minZoom={0.2}
         proOptions={{ hideAttribution: true }}
-        onNodeClick={(_event, node) => setSelectedId(node.id)}
+        onNodeClick={(_event, node) => onSelect(node.id)}
         onPaneClick={close}
       >
+        <Reveal count={nodes.length} />
         <Background gap={26} size={1} color={colors.dots} />
         <Controls showInteractive={false} />
       </ReactFlow>
-      {selected && <Inspector key={selectedId} node={selected} onClose={close} onEdit={onEdit} />}
+      {selected && <Inspector node={selected} onClose={close} onSelect={onSelect} onEdit={onEdit} />}
     </div>
   )
 }

@@ -3,6 +3,9 @@ import type { Architecture } from '../shared/types'
 import {
   build,
   clampInspectorWidth,
+  dependency,
+  HANDLE_IN,
+  HANDLE_OUT,
   folderName,
   heightOf,
   positions,
@@ -314,5 +317,26 @@ describe('clampInspectorWidth', () => {
 
   it('survives a viewport it cannot measure', () => {
     expect(clampInspectorWidth(9000, NaN)).toBe(INSPECTOR_MAX_W)
+  })
+})
+
+describe('dependency', () => {
+  it('reads a top-down drag as source depends on target', () => {
+    const link = dependency({ source: 'ui', target: 'api', sourceHandle: HANDLE_OUT, targetHandle: HANDLE_IN })
+    expect(link).toEqual({ from: 'ui', to: 'api' })
+  })
+
+  it('flips a bottom-up drag so the dependency is not reversed', () => {
+    const link = dependency({ source: 'api', target: 'ui', sourceHandle: HANDLE_IN, targetHandle: HANDLE_OUT })
+    expect(link).toEqual({ from: 'ui', to: 'api' })
+  })
+
+  it('refuses an ambiguous pair of matching handles', () => {
+    expect(dependency({ source: 'a', target: 'b', sourceHandle: HANDLE_OUT, targetHandle: HANDLE_OUT })).toBeNull()
+    expect(dependency({ source: 'a', target: 'b', sourceHandle: HANDLE_IN, targetHandle: HANDLE_IN })).toBeNull()
+  })
+
+  it('refuses a drag with no handle identity', () => {
+    expect(dependency({ source: 'a', target: 'b', sourceHandle: null, targetHandle: null })).toBeNull()
   })
 })
